@@ -1019,7 +1019,6 @@ namespace ICSharpCode.Decompiler.Disassembler
 					else
 						output.Write("           ");
 					var iface = type.Interfaces[index];
-					WriteAttributes(iface.CustomAttributes);
 					iface.InterfaceType.WriteTo(output, ILNameSyntax.TypeName);
 				}
 				output.WriteLine();
@@ -1040,6 +1039,17 @@ namespace ICSharpCode.Decompiler.Disassembler
 				output.WriteLine(".pack {0}", FormatNumber(type.PackingSize));
 				output.WriteLine(".size {0}", FormatNumber(type.ClassSize));
 				output.WriteLine();
+			}
+			// 2.3 writes the interface implementations' own attributes as .interfaceimpl
+			// directives inside the class body, not inline in the 'implements' clause.
+			for (int i = 0; i < type.Interfaces.Count; i++) {
+				var iface = type.Interfaces[i];
+				if (iface.HasCustomAttributes) {
+					output.Write(".interfaceimpl type ");
+					iface.InterfaceType.WriteTo(output, ILNameSyntax.TypeName);
+					output.WriteLine();
+					WriteAttributes(iface.CustomAttributes);
+				}
 			}
 			if (type.HasNestedTypes) {
 				output.WriteLine("// Nested Types");
