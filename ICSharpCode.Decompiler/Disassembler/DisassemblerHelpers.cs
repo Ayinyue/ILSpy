@@ -101,15 +101,28 @@ namespace ICSharpCode.Decompiler.Disassembler
 			WriteOffsetReference(writer, exceptionHandler.HandlerEnd, upperCase);
 		}
 
+		/// <summary>
+		/// dnSpy's 2.3 engine (dnlib) printed the short names for the typed element opcodes;
+		/// cecil uses the ECMA full names. Map them so the IL view matches byte for byte.
+		/// </summary>
+		static string OpcodeName(OpCode opcode)
+		{
+			if (opcode == OpCodes.Ldelem_Any)
+				return "ldelem";
+			if (opcode == OpCodes.Stelem_Any)
+				return "stelem";
+			return opcode.Name;
+		}
+
 		public static void WriteTo(this Instruction instruction, ITextOutput writer, bool upperCase = false, int operandAlignment = 0, string[] localNames = null,
 			int maxStringLength = int.MaxValue, NumberFormatter numberFormatter = null, Func<OpCode, string> getOpCodeDocumentation = null)
 		{
 			writer.WriteDefinition(OffsetToString(instruction.Offset, upperCase), instruction);
 			writer.Write(": ");
-			writer.WriteReference(instruction.OpCode.Name, instruction.OpCode);
+			writer.WriteReference(OpcodeName(instruction.OpCode), instruction.OpCode);
 			if (instruction.Operand != null) {
 				if (operandAlignment > 0) {
-					int count = operandAlignment - instruction.OpCode.Name.Length;
+					int count = operandAlignment - OpcodeName(instruction.OpCode).Length;
 					if (count <= 0)
 						count = 1;
 					writer.Write(new string(' ', count));
