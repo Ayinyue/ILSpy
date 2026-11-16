@@ -1073,7 +1073,6 @@ namespace ICSharpCode.Decompiler.Disassembler
 					DisassembleEvent(ev);
 					output.WriteLine();
 				}
-				output.WriteLine();
 			}
 			if (type.HasProperties) {
 				output.WriteLine("// Properties");
