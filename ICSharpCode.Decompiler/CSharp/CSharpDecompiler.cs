@@ -586,8 +586,8 @@ namespace ICSharpCode.Decompiler.CSharp
 								if (gp.HasConstraints) {
 									foreach (var constraint in gp.Constraints) {
 										// Avoid infinite recursion
-										if (!(constraint is GenericInstanceType git && git.ElementType == gp.Owner))
-											CollectNamespacesForDecompilation(constraint, namespaces, visited);
+										if (!(constraint.ConstraintType is GenericInstanceType git && git.ElementType == gp.Owner))
+											CollectNamespacesForDecompilation(constraint.ConstraintType, namespaces, visited);
 									}
 								}
 							}
@@ -682,8 +682,8 @@ namespace ICSharpCode.Decompiler.CSharp
 								if (gp.HasConstraints) {
 									foreach (var constraint in gp.Constraints) {
 										// Avoid infinite recursion
-										if (!(constraint is GenericInstanceType git && git.ElementType == gp.Owner))
-											CollectNamespacesForDecompilation(constraint, namespaces, visited);
+										if (!(constraint.ConstraintType is GenericInstanceType git && git.ElementType == gp.Owner))
+											CollectNamespacesForDecompilation(constraint.ConstraintType, namespaces, visited);
 									}
 								}
 							}
@@ -768,7 +768,11 @@ namespace ICSharpCode.Decompiler.CSharp
 			};
 			syntaxTree = new SyntaxTree();
 			var cecilType = typeSystem.GetCecil(type);
-			CollectNamespacesForDecompilation(cecilType, decompileRun.Namespaces, new HashSet<MemberReference>());
+			// MemberDefinition overload, NOT the MemberReference one: the reference overload only
+			// records the type's own namespace and its base type/interfaces, which left single-type
+			// decompilations with almost no usable namespaces (using declarations were skipped and
+			// every type name stayed fully qualified).
+			CollectNamespacesForDecompilation(new[] { cecilType }, decompileRun.Namespaces, new HashSet<MemberReference>());
 			DoDecompileTypes(new[] { cecilType }, decompileRun, decompilationContext, syntaxTree);
 			RunTransforms(syntaxTree, decompileRun, decompilationContext);
 			return syntaxTree;

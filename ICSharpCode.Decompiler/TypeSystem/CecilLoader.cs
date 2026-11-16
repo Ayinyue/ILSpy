@@ -736,14 +736,24 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		
 		void AddAttributes(TypeDefinition typeDefinition, IUnresolvedTypeDefinition targetEntity)
 		{
+			// The 2.3 engine emits the table custom attributes first and the flag-derived
+			// pseudo attributes (Serializable/ComImport/StructLayout) after them, so the
+			// flag-derived ones go last here as well (see the pseudo block below).
+			if (typeDefinition.HasCustomAttributes) {
+				AddCustomAttributes(typeDefinition.CustomAttributes, targetEntity.Attributes);
+			}
+			if (typeDefinition.HasSecurityDeclarations) {
+				AddSecurityAttributes(typeDefinition.SecurityDeclarations, targetEntity.Attributes);
+			}
+
 			// SerializableAttribute
 			if (typeDefinition.IsSerializable)
 				targetEntity.Attributes.Add(serializableAttribute);
-			
+
 			// ComImportAttribute
 			if (typeDefinition.IsImport)
 				targetEntity.Attributes.Add(comImportAttribute);
-			
+
 			#region StructLayoutAttribute
 			LayoutKind layoutKind = LayoutKind.Auto;
 			switch (typeDefinition.Attributes & TypeAttributes.LayoutMask) {
@@ -782,13 +792,6 @@ namespace ICSharpCode.Decompiler.TypeSystem
 				targetEntity.Attributes.Add(interningProvider.Intern(structLayout));
 			}
 			#endregion
-			
-			if (typeDefinition.HasCustomAttributes) {
-				AddCustomAttributes(typeDefinition.CustomAttributes, targetEntity.Attributes);
-			}
-			if (typeDefinition.HasSecurityDeclarations) {
-				AddSecurityAttributes(typeDefinition.SecurityDeclarations, targetEntity.Attributes);
-			}
 		}
 		#endregion
 		
@@ -1732,8 +1735,8 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			tp.HasDefaultConstructorConstraint = g.HasDefaultConstructorConstraint;
 			
 			if (g.HasConstraints) {
-				foreach (TypeReference constraint in g.Constraints) {
-					tp.Constraints.Add(ReadTypeReference(constraint));
+				foreach (var constraint in g.Constraints) {
+					tp.Constraints.Add(ReadTypeReference(constraint.ConstraintType));
 				}
 			}
 		}

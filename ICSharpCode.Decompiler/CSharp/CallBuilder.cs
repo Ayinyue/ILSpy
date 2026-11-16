@@ -236,15 +236,18 @@ namespace ICSharpCode.Decompiler.CSharp
 					string methodName = method.Name;
 					AstNodeCollection<AstType> typeArgumentList;
 					if ((transform & CallTransformation.RequireTarget) != 0) {
-						targetExpr = new MemberReferenceExpression(target.Expression, methodName);
-						typeArgumentList = ((MemberReferenceExpression)targetExpr).TypeArguments;
-
 						// HACK : convert this.Dispose() to ((IDisposable)this).Dispose(), if Dispose is an explicitly implemented interface method.
 						// settings.AlwaysCastTargetsOfExplicitInterfaceImplementationCalls == true is used in Windows Forms' InitializeComponent methods.
+						// The cast branch and the plain member-reference branch are exclusive: both
+						// would attach target.Expression to a tree, and the second AddChild throws
+						// "Node is already used in another tree".
 						if (method.IsExplicitInterfaceImplementation && (target.Expression is ThisReferenceExpression || settings.AlwaysCastTargetsOfExplicitInterfaceImplementationCalls)) {
 							var castExpression = new CastExpression(expressionBuilder.ConvertType(method.ImplementedInterfaceMembers[0].DeclaringType), target.Expression);
 							methodName = method.ImplementedInterfaceMembers[0].Name;
 							targetExpr = new MemberReferenceExpression(castExpression, methodName);
+							typeArgumentList = ((MemberReferenceExpression)targetExpr).TypeArguments;
+						} else {
+							targetExpr = new MemberReferenceExpression(target.Expression, methodName);
 							typeArgumentList = ((MemberReferenceExpression)targetExpr).TypeArguments;
 						}
 					} else {

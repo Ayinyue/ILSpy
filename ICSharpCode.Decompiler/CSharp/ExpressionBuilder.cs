@@ -1730,15 +1730,16 @@ namespace ICSharpCode.Decompiler.CSharp
 			if (arrayExpr.Type.Kind != TypeKind.Array) {
 				arrayExpr = arrayExpr.ConvertTo(compilation.FindType(KnownTypeCode.Array), this);
 			}
-			if (inst.ResultType == StackType.I4) {
-				return new MemberReferenceExpression(arrayExpr.Expression, "Length")
-					.WithILInstruction(inst)
-					.WithRR(new ResolveResult(compilation.FindType(KnownTypeCode.Int32)));
-			} else {
-				return new MemberReferenceExpression(arrayExpr.Expression, "LongLength")
-					.WithILInstruction(inst)
-					.WithRR(new ResolveResult(compilation.FindType(KnownTypeCode.Int64)));
-			}
+			// Annotate with the real Array.Length/LongLength property (2.3 emitted the
+			// property's MemberRef on this token for navigation/highlighting).
+			var arrayType = compilation.FindType(KnownTypeCode.Array);
+			var lengthProperty = arrayType.GetProperties(p => p.Name == (inst.ResultType == StackType.I4 ? "Length" : "LongLength")).FirstOrDefault();
+			var memberName = inst.ResultType == StackType.I4 ? "Length" : "LongLength";
+			var resultType = inst.ResultType == StackType.I4 ? compilation.FindType(KnownTypeCode.Int32) : compilation.FindType(KnownTypeCode.Int64);
+			var memberReferenceExpression = new MemberReferenceExpression(arrayExpr.Expression, memberName);
+			return lengthProperty != null
+				? memberReferenceExpression.WithILInstruction(inst).WithRR(new MemberResolveResult(arrayExpr.ResolveResult, lengthProperty))
+				: memberReferenceExpression.WithILInstruction(inst).WithRR(new ResolveResult(resultType));
 		}
 		
 		protected internal override TranslatedExpression VisitLdFlda(LdFlda inst, TranslationContext context)

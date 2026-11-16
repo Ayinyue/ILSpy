@@ -116,8 +116,11 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 			this.returnStores.Clear();
 			this.skipFinallyBodies = null;
 			this.cachedStateVars = null;
-			if (!MatchEnumeratorCreationPattern(function))
+			if (!MatchEnumeratorCreationPattern(function)) {
+				if (StateMachineDiagnostics.Enabled)
+					StateMachineDiagnostics.Log("yield:kickout@" + RejectionContext(function));
 				return;
+			}
 			BlockContainer newBody;
 			try {
 				AnalyzeCtor();
@@ -125,7 +128,10 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 				ResolveIEnumerableIEnumeratorFieldMapping();
 				ConstructExceptionTable();
 				newBody = AnalyzeMoveNext();
-			} catch (SymbolicAnalysisFailedException) {
+			} catch (SymbolicAnalysisFailedException ex) {
+				if (StateMachineDiagnostics.Enabled)
+					StateMachineDiagnostics.Log("yield:rej@" + RejectionContext(function) + ":" +
+						(string.IsNullOrEmpty(ex.Message) ? "nomsg" : ex.Message));
 				return;
 			}
 
@@ -191,11 +197,27 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 		#endregion
 
 		#region Match the enumerator creation pattern
+		/// <summary>Diagnostic context for a rejection: whether the candidate function belongs
+		/// to a compiler-generated state machine type, plus the method name.</summary>
+		static string RejectionContext(ILFunction function) {
+			var method = function?.CecilMethod;
+			if (method is null)
+				return "unknown";
+			var declType = method.DeclaringType;
+			var isStateMachine = declType != null && declType.IsCompilerGenerated();
+			return (isStateMachine ? "sm:" : "plain:") + (declType?.Name ?? "?") + "::" + method.Name;
+		}
+
 		bool MatchEnumeratorCreationPattern(ILFunction function)
 		{
 			Block body = SingleBlock(function.Body);
 			if (body == null || body.Instructions.Count == 0) {
-				return false;
+				// The context tag is only built when diagnostics are hooked up - this
+				// pattern-match runs for every method, so the production path must not
+				// allocate strings.
+				return StateMachineDiagnostics.Enabled
+					? StateMachineDiagnostics.Reject("yield:e1@" + RejectionContext(function))
+					: false;
 			}
 
 			ILInstruction newObj;
@@ -203,14 +225,18 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 				// No parameters passed to enumerator (not even 'this'):
 				// ret(newobj(...))
 				if (!body.Instructions[0].MatchReturn(out newObj))
-					return false;
+					return StateMachineDiagnostics.Enabled
+						? StateMachineDiagnostics.Reject("yield:e2@" + RejectionContext(function))
+						: false;
 				if (MatchEnumeratorCreationNewObj(newObj)) {
 					return true;
 				} else if (MatchMonoEnumeratorCreationNewObj(newObj)) {
 					isCompiledWithMono = true;
 					return true;
 				} else {
-					return false;
+					return StateMachineDiagnostics.Enabled
+						? StateMachineDiagnostics.Reject("yield:e3@" + RejectionContext(function))
+						: false;
 				}
 			}
 
@@ -221,7 +247,9 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 
 			// stloc(var_1, newobj(..))
 			if (!body.Instructions[pos].MatchStLoc(out var var1, out newObj))
-				return false;
+				return StateMachineDiagnostics.Enabled
+					? StateMachineDiagnostics.Reject("yield:e4@" + RejectionContext(function))
+					: false;
 			if (MatchEnumeratorCreationNewObj(newObj)) {
 				pos++; // OK
 				isCompiledWithMono = false;
@@ -229,16 +257,20 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 				pos++;
 				isCompiledWithMono = true;
 			} else {
-				return false;
+				return StateMachineDiagnostics.Enabled
+					? StateMachineDiagnostics.Reject("yield:e5@" + RejectionContext(function))
+					: false;
 			}
-			
+
 			for (; pos < body.Instructions.Count; pos++) {
 				// stfld(..., ldloc(var_1), ldloc(parameter))
 				// or (in structs): stfld(..., ldloc(var_1), ldobj(ldloc(this)))
 				if (!body.Instructions[pos].MatchStFld(out var ldloc, out var storedField, out var value))
 					break;
 				if (!ldloc.MatchLdLoc(var1)) {
-					return false;
+					return StateMachineDiagnostics.Enabled
+						? StateMachineDiagnostics.Reject("yield:e6@" + RejectionContext(function))
+						: false;
 				}
 				if (value.MatchLdLoc(out var parameter) && parameter.Kind == VariableKind.Parameter) {
 					fieldToParameterMap[(IField)storedField.MemberDefinition] = parameter;
@@ -246,7 +278,9 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 					// copy of 'this' in struct
 					fieldToParameterMap[(IField)storedField.MemberDefinition] = ((LdLoc)ldobj.Target).Variable;
 				} else {
-					return false;
+					return StateMachineDiagnostics.Enabled
+						? StateMachineDiagnostics.Reject("yield:e7@" + RejectionContext(function))
+						: false;
 				}
 			}
 
@@ -273,7 +307,9 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 				// ret(ldloc(var_2))
 				return true;
 			} else {
-				return false;
+				return StateMachineDiagnostics.Enabled
+					? StateMachineDiagnostics.Reject("yield:e8@" + RejectionContext(function))
+					: false;
 			}
 		}
 
@@ -305,7 +341,27 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 				return false;
 			enumeratorCtor = context.TypeSystem.GetCecil(newObj.Method) as MethodDefinition;
 			enumeratorType = enumeratorCtor?.DeclaringType;
-			return enumeratorType?.DeclaringType == currentType
+			if (enumeratorType == null) {
+				// GetCecil fails for nested compiler-generated types in some bridge
+				// layouts; resolve through dnlib by name so the rewrite can proceed.
+				var declDef = newObj.Method.DeclaringTypeDefinition;
+				var dnlibType = declDef != null
+					? currentType.NestedTypes.FirstOrDefault(t => t.Name == declDef.Name && t.IsCompilerGenerated())
+					: null;
+				var dnlibCtor = dnlibType != null
+					? dnlibType.Methods.FirstOrDefault(m => m.Name == ".ctor" && m.Parameters.Count == 1)
+					: null;
+				if (dnlibCtor != null) {
+					enumeratorCtor = dnlibCtor;
+					enumeratorType = dnlibType;
+				}
+			}
+			// Reference equality across the dnlib/cecil bridge is unreliable; compare by
+			// declaring type name instead, like the 2.3 ILAst matching does.
+			return enumeratorType != null
+				&& enumeratorType.DeclaringType != null
+				&& enumeratorType.DeclaringType.Name == currentType.Name
+				&& enumeratorType.DeclaringType.Namespace == currentType.Namespace
 				&& IsCompilerGeneratorEnumerator(enumeratorType);
 		}
 

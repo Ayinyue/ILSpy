@@ -113,7 +113,7 @@ namespace ICSharpCode.Decompiler.Tests.Helpers
 		public static string Disassemble(string sourceFileName, string outputFile, AssemblerOptions asmOptions)
 		{
 			if (asmOptions.HasFlag(AssemblerOptions.UseOwnDisassembler)) {
-				using (ModuleDefinition module = ModuleDefinition.ReadModule(sourceFileName))
+				using (ModuleDefinition module = ModuleDefinition.ReadModule(sourceFileName, new ReaderParameters { AssemblyResolver = SnippetResolver }))
 				using (var writer = new StringWriter()) {
 					module.Name = Path.GetFileNameWithoutExtension(outputFile);
 					var output = new PlainTextOutput(writer);
@@ -188,6 +188,32 @@ namespace ICSharpCode.Decompiler.Tests.Helpers
 			};
 		});
 		
+
+
+		/// <summary>
+		/// Cecil resolver pointing at the .NET Framework reference assemblies - the engine
+		/// resolves module references through the module's own resolver, whose default
+		/// search paths do not cover them under a vstest host.
+		/// </summary>
+		internal static readonly Mono.Cecil.IAssemblyResolver SnippetResolver = CreateSnippetResolver();
+
+		static Mono.Cecil.IAssemblyResolver CreateSnippetResolver() {
+			var resolver = new Mono.Cecil.DefaultAssemblyResolver();
+			var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+			if (!string.IsNullOrEmpty(programFiles)) {
+				string refAsmPath = Path.Combine(programFiles, @"Reference Assemblies\Microsoft\Framework\.NETFramework\v4.5");
+				if (Directory.Exists(refAsmPath))
+					resolver.AddSearchDirectory(refAsmPath);
+			}
+			try {
+				var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+				if (!string.IsNullOrEmpty(runtimeDir))
+					resolver.AddSearchDirectory(runtimeDir);
+			}
+			catch {
+			}
+			return resolver;
+		}
 
 		public static List<string> GetPreprocessorSymbols(CSharpCompilerOptions flags)
 		{
@@ -345,7 +371,7 @@ namespace ICSharpCode.Decompiler.Tests.Helpers
 			var emitResult = compilation.Emit(peStream);
 			peStream.Position = 0;
 
-			var moduleDefinition = ModuleDefinition.ReadModule(peStream);
+			var moduleDefinition = ModuleDefinition.ReadModule(peStream, new ReaderParameters { AssemblyResolver = SnippetResolver });
 			var decompiler = new CSharpDecompiler(moduleDefinition, new DecompilerSettings());
 
 			return decompiler;
@@ -390,7 +416,7 @@ namespace ICSharpCode.Decompiler.Tests.Helpers
 
 		public static string DecompileCSharp(string assemblyFileName, DecompilerSettings settings = null)
 		{
-			using (var module = ModuleDefinition.ReadModule(assemblyFileName)) {
+			using (var module = ModuleDefinition.ReadModule(assemblyFileName, new ReaderParameters { AssemblyResolver = SnippetResolver })) {
 				var typeSystem = new DecompilerTypeSystem(module);
 				CSharpDecompiler decompiler = new CSharpDecompiler(typeSystem, settings ?? new DecompilerSettings());
 				decompiler.AstTransforms.Insert(0, new RemoveEmbeddedAtttributes());

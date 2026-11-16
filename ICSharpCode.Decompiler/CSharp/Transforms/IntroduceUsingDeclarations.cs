@@ -38,16 +38,32 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 			// First determine all the namespaces that need to be imported:
 			var requiredImports = new FindRequiredImports(context);
 			rootNode.AcceptVisitor(requiredImports);
-			
+
+			// The 2.3 engine always imports System, even when not necessary
+			// ("always import System" in its IntroduceUsingDeclarations), so a bare
+			// using System; appears in every type that has any using block. System is
+			// added to the imported set but NOT to VerifiedNamespaces: the superset
+			// check then keeps it only for types that actually reference System, which
+			// matches 2.3 output on normal types while leaving the empty-tree fallback
+			// path (compiler-generated types) untouched.
+			requiredImports.ImportedNamespaces.Add("System");
+
 			var usingScope = new UsingScope();
 			rootNode.AddAnnotation(usingScope);
 
 			if (context.Settings.UsingDeclarations) {
 				var insertionPoint = rootNode.Children.LastOrDefault(n => n is PreProcessorDirective p && p.Type == PreProcessorDirectiveType.Define);
 
-				// Now add using declarations for those namespaces:
-				foreach (string ns in requiredImports.ImportedNamespaces.OrderByDescending(n => n)) {
-					Debug.Assert(context.RequiredNamespacesSuperset.Contains(ns), $"Should not insert using declaration for namespace that is missing from the superset: {ns}");
+				// Now add using declarations for those namespaces, in ascending order like the
+				// 2.3 engine. Each declaration is inserted right after the insertion point, so
+				// the loop must go backwards (descending) to produce ascending output order.
+				foreach (string ns in requiredImports.ImportedNamespaces.OrderByDescending(n => n, StringComparer.Ordinal)) {
+					// In the dnSpy dnlib->cecil bridge some namespaces referenced from method
+					// bodies are absent from the superset (the corresponding member reference
+					// cannot be resolved within the same module). Namespaces the visitor itself
+					// verified against the type system are trusted regardless of the superset.
+					if (!context.RequiredNamespacesSuperset.Contains(ns) && !requiredImports.VerifiedNamespaces.Contains(ns))
+						continue;
 					// we go backwards (OrderByDescending) through the list of namespaces because we insert them backwards
 					// (always inserting at the start of the list)
 					string[] parts = ns.Split('.');
@@ -69,19 +85,31 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 
 			// verify that the SimpleTypes refer to the correct type (no ambiguities)
 			rootNode.AcceptVisitor(new FullyQualifyAmbiguousTypeNamesVisitor(context, usingScope));
+			if (Environment.GetEnvironmentVariable("DNSPY_ILSPY32_DIAG") == "1") {
+				var sbc = new System.Text.StringBuilder("IUD-CHILDREN");
+				foreach (AstNode c in rootNode.Children)
+					sbc.Append(" [").Append(c.GetType().Name).Append("]");
+				Console.Error.WriteLine(sbc.ToString());
+			}
 		}
 		
 		sealed class FindRequiredImports : DepthFirstAstVisitor
 		{
 			string currentNamespace;
+			readonly TransformContext context;
 
 			public readonly HashSet<string> DeclaredNamespaces = new HashSet<string>() { string.Empty };
 			public readonly HashSet<string> ImportedNamespaces = new HashSet<string>();
+			/// <summary>Namespaces the visitor verified against the type system itself
+			/// (qualified chains that carry no resolve results in the bridge-produced tree).</summary>
+			public readonly HashSet<string> VerifiedNamespaces = new HashSet<string>();
 			
 			public FindRequiredImports(TransformContext context)
 			{
+				this.context = context;
 				this.currentNamespace = context.DecompiledTypeDefinition?.Namespace ?? string.Empty;
 			}
+
 			
 			bool IsParentOfCurrentNamespace(string ns)
 			{
@@ -104,6 +132,55 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 				}
 				base.VisitSimpleType(simpleType); // also visit type arguments
 			}
+
+			public override void VisitMemberType(MemberType memberType)
+			{
+				// The dnlib->cecil bridge emits fully qualified chains without resolve-result
+				// annotations; resolve them against the type system so their namespaces are
+				// imported like every other type reference.
+				if (memberType.Annotation<TypeResolveResult>() == null && !(memberType.Parent is AstType)) {
+					var type = FindTypeByQualifiedName(memberType);
+					if (type != null && type.Namespace.Length > 0 && !IsParentOfCurrentNamespace(type.Namespace)) {
+						ImportedNamespaces.Add(type.Namespace);
+						VerifiedNamespaces.Add(type.Namespace);
+					}
+				}
+				base.VisitMemberType(memberType);
+			}
+
+			/// <summary>
+			/// Resolves a qualified name chain ('System.Threading.Thread') against the type
+			/// system. The generic arity comes from the type arguments on each segment; nested
+			/// types resolve through their dotted full name. Returns null when nothing matches.
+			/// </summary>
+			IType FindTypeByQualifiedName(AstType outermost)
+			{
+				var parts = new List<(string name, int arity)>();
+				AstType t = outermost;
+				while (t is MemberType memberType) {
+					parts.Add((memberType.MemberName, memberType.TypeArguments.Count));
+					t = memberType.Target;
+				}
+				if (t is SimpleType simpleType)
+					parts.Add((simpleType.Identifier, simpleType.TypeArguments.Count));
+				else
+					return null;
+				parts.Reverse();
+				var fullName = new System.Text.StringBuilder();
+				foreach (var (name, arity) in parts) {
+					if (fullName.Length > 0)
+						fullName.Append('.');
+					fullName.Append(name);
+					if (arity > 0)
+						fullName.Append('`').Append(arity);
+				}
+				var compilation = context.TypeSystem.Compilation;
+				var type = compilation.FindType(new FullTypeName(fullName.ToString()));
+				if (type.Kind == TypeKind.Unknown && parts.Count == 1 && parts[0].arity == 0) {
+					type = compilation.FindType(new FullTypeName(fullName.ToString() + "`1"));
+				}
+				return type.Kind != TypeKind.Unknown ? type : null;
+			}
 			
 			public override void VisitNamespaceDeclaration(NamespaceDeclaration namespaceDeclaration)
 			{
@@ -121,9 +198,11 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 		{
 			Stack<CSharpTypeResolveContext> context;
 			TypeSystemAstBuilder astBuilder;
+			readonly TransformContext transformContext;
 			
 			public FullyQualifyAmbiguousTypeNamesVisitor(TransformContext context, UsingScope usingScope)
 			{
+				this.transformContext = context;
 				this.context = new Stack<CSharpTypeResolveContext>();
 				if (!string.IsNullOrEmpty(context.DecompiledTypeDefinition?.Namespace)) {
 					foreach (string ns in context.DecompiledTypeDefinition.Namespace.Split('.')) {
@@ -200,9 +279,28 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 					base.VisitSimpleType(simpleType);
 					return;
 				}
-				astBuilder.NameLookupMode = simpleType.GetNameLookupMode();
+				ReplaceWithTypeReference(simpleType, rr);
+			}
+
+			public override void VisitMemberType(MemberType memberType)
+			{
+				// The dnlib->cecil bridge emits fully qualified chains without resolve results;
+				// resolve them now that the using declarations are known so the names shorten.
+				if (memberType.Annotation<TypeResolveResult>() == null && !(memberType.Parent is AstType)) {
+					var type = ResolveQualifiedName(memberType);
+					if (type != null) {
+						ReplaceWithTypeReference(memberType, new TypeResolveResult(type));
+						return;
+					}
+				}
+				base.VisitMemberType(memberType);
+			}
+
+			void ReplaceWithTypeReference(AstType typeNode, TypeResolveResult rr)
+			{
+				astBuilder.NameLookupMode = typeNode.GetNameLookupMode();
 				if (astBuilder.NameLookupMode == NameLookupMode.Type) {
-					AstType outermostType = simpleType;
+					AstType outermostType = typeNode;
 					while (outermostType.Parent is AstType)
 						outermostType = (AstType)outermostType.Parent;
 					if (outermostType.Parent is TypeReferenceExpression) {
@@ -212,11 +310,44 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 						astBuilder.NameLookupMode = NameLookupMode.Expression;
 					}
 				}
-				if (simpleType.Parent is Syntax.Attribute) {
-					simpleType.ReplaceWith(astBuilder.ConvertAttributeType(rr.Type));
+				if (typeNode.Parent is Syntax.Attribute) {
+					typeNode.ReplaceWith(astBuilder.ConvertAttributeType(rr.Type));
 				} else {
-					simpleType.ReplaceWith(astBuilder.ConvertType(rr.Type));
+					typeNode.ReplaceWith(astBuilder.ConvertType(rr.Type));
 				}
+			}
+
+			/// <summary>
+			/// Resolves a qualified name chain against the type system; same rules as
+			/// FindRequiredImports.FindTypeByQualifiedName.
+			/// </summary>
+			IType ResolveQualifiedName(AstType outermost)
+			{
+				var parts = new List<(string name, int arity)>();
+				AstType t = outermost;
+				while (t is MemberType memberType) {
+					parts.Add((memberType.MemberName, memberType.TypeArguments.Count));
+					t = memberType.Target;
+				}
+				if (t is SimpleType simpleType)
+					parts.Add((simpleType.Identifier, simpleType.TypeArguments.Count));
+				else
+					return null;
+				parts.Reverse();
+				var fullName = new System.Text.StringBuilder();
+				foreach (var (name, arity) in parts) {
+					if (fullName.Length > 0)
+						fullName.Append('.');
+					fullName.Append(name);
+					if (arity > 0)
+						fullName.Append('`').Append(arity);
+				}
+				var compilation = transformContext.TypeSystem.Compilation;
+				var type = compilation.FindType(new FullTypeName(fullName.ToString()));
+				if (type.Kind == TypeKind.Unknown && parts.Count == 1 && parts[0].arity == 0) {
+					type = compilation.FindType(new FullTypeName(fullName.ToString() + "`1"));
+				}
+				return type.Kind != TypeKind.Unknown ? type : null;
 			}
 		}
 	}

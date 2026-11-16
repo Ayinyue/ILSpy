@@ -953,7 +953,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 						for (int j = 0; j < gp.Constraints.Count; j++) {
 							if (j > 0)
 								output.Write(", ");
-							gp.Constraints[j].WriteTo(output, ILNameSyntax.TypeName);
+							gp.Constraints[j].ConstraintType.WriteTo(output, ILNameSyntax.TypeName);
 						}
 						output.Write(") ");
 					}

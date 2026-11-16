@@ -206,23 +206,42 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 			}
 			if (startCall.Arguments.Count != 2)
 				return false;
-			if (!startCall.Arguments[0].MatchLdLocRef(out ILVariable builderVar))
+			// Two compiler layouts:
+			//  - classic (C# 7-era Roslyn): the builder is copied into a local first,
+			//    and Start receives ldloc(ldlocalBuilder).
+			//  - modern (5.0+ Roslyn): the builder stays in the state machine field, and
+			//    Start receives ldloca(ldfld stateMachine.<>t__builder) directly; the
+			//    copy instruction does not exist.
+			ILVariable builderVar;
+			bool hasBuilderLocal;
+			if (startCall.Arguments[0].MatchLdLocRef(out var builderLocalVar)) {
+				builderVar = builderLocalVar;
+				hasBuilderLocal = true;
+			} else if (startCall.Arguments[0].MatchLdFlda(out var startTarget, out var startBuilderField)
+				&& startTarget.MatchLdLocRef(out var smVarForStart)) {
+				builderVar = null;
+				hasBuilderLocal = false;
+				builderField = (IField)startBuilderField.MemberDefinition;
+			} else {
 				return false;
+			}
 			if (!startCall.Arguments[1].MatchLdLoca(out ILVariable stateMachineVar))
 				return false;
 			stateMachineType = stateMachineVar.Type.GetDefinition();
 			if (stateMachineType == null)
 				return false;
 
-			// Check third-to-last instruction (copy of builder)
-			// stloc builder(ldfld StateMachine::<>t__builder(ldloc stateMachine))
-			if (!body[body.Count - 3].MatchStLoc(builderVar, out var loadBuilderExpr))
-				return false;
-			if (!loadBuilderExpr.MatchLdFld(out var loadStateMachineForBuilderExpr, out builderField))
-				return false;
-			builderField = (IField)builderField.MemberDefinition;
-			if (!(loadStateMachineForBuilderExpr.MatchLdLocRef(stateMachineVar) || loadStateMachineForBuilderExpr.MatchLdLoc(stateMachineVar)))
-				return false;
+			if (hasBuilderLocal) {
+				// Check third-to-last instruction (copy of builder)
+				// stloc builder(ldfld StateMachine::<>t__builder(ldloc stateMachine))
+				if (!body[body.Count - 3].MatchStLoc(builderVar, out var loadBuilderExpr))
+					return false;
+				if (!loadBuilderExpr.MatchLdFld(out var loadStateMachineForBuilderExpr, out builderField))
+					return false;
+				builderField = (IField)builderField.MemberDefinition;
+				if (!(loadStateMachineForBuilderExpr.MatchLdLocRef(stateMachineVar) || loadStateMachineForBuilderExpr.MatchLdLoc(stateMachineVar)))
+					return false;
+			}
 
 			// Check the last instruction (ret)
 			if (methodType == AsyncMethodType.Void) {
@@ -251,7 +270,10 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 
 			// Check the last field assignment - this should be the state field
 			// stfld <>1__state(ldloca stateField, ldc.i4 -1)
-			if (!MatchStFld(body[body.Count - 4], stateMachineVar, out stateField, out var initialStateExpr))
+			// (classic layout: builder copy sits below it, so index Count-4; modern layout:
+			// no copy, index Count-3)
+			int stateInitIndex = hasBuilderLocal ? body.Count - 4 : body.Count - 3;
+			if (!MatchStFld(body[stateInitIndex], stateMachineVar, out stateField, out var initialStateExpr))
 				return false;
 			if (!initialStateExpr.MatchLdcI4(out initialState))
 				return false;
@@ -260,7 +282,11 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 
 			// Check the second-to-last field assignment - this should be the builder field
 			// stfld StateMachine.builder(ldloca stateMachine, call Create())
-			if (!MatchStFld(body[body.Count - 5], stateMachineVar, out var builderField3, out var builderInitialization))
+			// Check the builder-field initialization. Classic layout: second-to-last field
+			// assignment (index Count-5). Modern layout: the first instruction (index 0),
+			// with the state field init at Count-3 and no builder copy.
+			int builderInitIndex = hasBuilderLocal ? body.Count - 5 : (stateMachineType.Kind == TypeKind.Class ? 1 : 0);
+			if (!MatchStFld(body[builderInitIndex], stateMachineVar, out var builderField3, out var builderInitialization))
 				return false;
 			if (builderField3 != builderField)
 				return false;
@@ -279,7 +305,13 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 					return false;
 				pos++;
 			}
-			for (; pos < body.Count - 5; pos++) {
+			// Parameter field assignments: classic layout fills [pos..Count-6] (the builder
+			// copy follows at Count-5); modern layout fills [pos..Count-4] (the builder init
+			// was at 0 and the state init sits at Count-3).
+			int paramLoopEnd = hasBuilderLocal ? body.Count - 5 : body.Count - 3;
+			if (!hasBuilderLocal)
+				pos = Math.Max(pos, 1); // skip the builder init at body[0]
+			for (; pos < paramLoopEnd; pos++) {
 				// stfld StateMachine.field(ldloca stateMachine, ldvar(param))
 				if (!MatchStFld(body[pos], stateMachineVar, out var field, out var fieldInit))
 					return false;
@@ -377,12 +409,23 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 			// stobj System.Int32(ldflda [Field ICSharpCode.Decompiler.Tests.TestCases.Pretty.Async+<SimpleBoolTaskMethod>d__7.<>1__state](ldloc this), ldc.i4 -2)
 			// call SetResult(ldflda [Field ICSharpCode.Decompiler.Tests.TestCases.Pretty.Async+<SimpleBoolTaskMethod>d__7.<>t__builder](ldloc this), ldloc result)
 			// leave IL_0000
-			if (setResultAndExitBlock.Instructions.Count != 3)
+			// The modern Roslyn layout interleaves local cleanup stores between the state
+			// assignment and the SetResult call; locate both instead of pinning indices.
+			if (setResultAndExitBlock.Instructions.Count < 3)
 				throw new SymbolicAnalysisFailedException();
-			if (!MatchStateAssignment(setResultAndExitBlock.Instructions[0], out finalState))
+			ILInstruction stateAssign = null;
+			CallInstruction setResultCall = null;
+			foreach (var inst in setResultAndExitBlock.Instructions) {
+				if (stateAssign == null && MatchStateAssignment(inst, out var fs)) {
+					stateAssign = inst;
+					finalState = fs;
+				}
+				if (setResultCall == null && inst is CallInstruction ci && ci.Method.Name == "SetResult")
+					setResultCall = ci;
+			}
+			if (stateAssign == null || setResultCall == null)
 				throw new SymbolicAnalysisFailedException();
-			if (!MatchCall(setResultAndExitBlock.Instructions[1], "SetResult", out var args))
-				throw new SymbolicAnalysisFailedException();
+			var args = setResultCall.Arguments;
 			if (!IsBuilderFieldOnThis(args[0]))
 				throw new SymbolicAnalysisFailedException();
 			if (methodType == AsyncMethodType.TaskOfT) {
@@ -395,7 +438,7 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 				if (args.Count != 1)
 					throw new SymbolicAnalysisFailedException();
 			}
-			if (!setResultAndExitBlock.Instructions[2].MatchLeave(blockContainer))
+			if (!setResultAndExitBlock.Instructions[setResultAndExitBlock.Instructions.Count - 1].MatchLeave(blockContainer))
 				throw new SymbolicAnalysisFailedException();
 		}
 
@@ -417,27 +460,42 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 			if (!handler.Filter.MatchLdcI4(1))
 				throw new SymbolicAnalysisFailedException();
 			var catchBlock = YieldReturnDecompiler.SingleBlock(handler.Body);
-			if (catchBlock?.Instructions.Count != 4)
+			// The modern Roslyn layout interleaves local cleanup stores here as well; locate
+			// the exception variable, the state assignment, the SetException call and the
+			// leave by scan instead of pinned indices.
+			if (catchBlock == null || catchBlock.Instructions.Count < 4)
 				throw new SymbolicAnalysisFailedException();
-			// stloc exception(ldloc E_143)
-			if (!(catchBlock.Instructions[0] is StLoc stloc))
+			StLoc stloc = null;
+			ILInstruction stateAssign = null;
+			CallInstruction setExceptionCall = null;
+			ILInstruction leaveInst = null;
+			foreach (var inst in catchBlock.Instructions) {
+				if (stloc == null && inst is StLoc sl && sl.Value.MatchLdLoc(handler.Variable))
+					stloc = sl;
+				if (stateAssign == null && MatchStateAssignment(inst, out int ns)) {
+					if (ns != finalState)
+						throw new SymbolicAnalysisFailedException();
+					stateAssign = inst;
+				}
+				if (setExceptionCall == null && inst is CallInstruction ci && ci.Method.Name == "SetException")
+					setExceptionCall = ci;
+				if (leaveInst == null && inst.MatchLeave((BlockContainer)moveNextFunction.Body))
+					leaveInst = inst;
+			}
+			if (stloc == null)
 				throw new SymbolicAnalysisFailedException();
-			if (!stloc.Value.MatchLdLoc(handler.Variable))
+			if (stateAssign == null)
 				throw new SymbolicAnalysisFailedException();
-			// stfld <>1__state(ldloc this, ldc.i4 -2)
-			if (!MatchStateAssignment(catchBlock.Instructions[1], out int newState) || newState != finalState)
+			if (setExceptionCall == null)
 				throw new SymbolicAnalysisFailedException();
-			// call SetException(ldfld <>t__builder(ldloc this), ldloc exception)
-			if (!MatchCall(catchBlock.Instructions[2], "SetException", out var args))
+			var setExcArgs = setExceptionCall.Arguments;
+			if (setExcArgs.Count != 2)
 				throw new SymbolicAnalysisFailedException();
-			if (args.Count != 2)
+			if (!IsBuilderFieldOnThis(setExcArgs[0]))
 				throw new SymbolicAnalysisFailedException();
-			if (!IsBuilderFieldOnThis(args[0]))
+			if (!setExcArgs[1].MatchLdLoc(stloc.Variable))
 				throw new SymbolicAnalysisFailedException();
-			if (!args[1].MatchLdLoc(stloc.Variable))
-				throw new SymbolicAnalysisFailedException();
-			// leave IL_0000
-			if (!catchBlock.Instructions[3].MatchLeave((BlockContainer)moveNextFunction.Body))
+			if (leaveInst == null)
 				throw new SymbolicAnalysisFailedException();
 		}
 
