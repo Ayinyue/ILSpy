@@ -154,7 +154,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 					v.VariableType.WriteTo(output);
 					string localName = localNames != null && v.Index >= 0 && v.Index < localNames.Length ? localNames[v.Index] : null;
 					if (!string.IsNullOrEmpty(localName))
-						output.Write(" " + localName);
+						output.Write(" " + DisassemblerHelpers.Escape(localName));
 					if (v.Index + 1 < body.Variables.Count)
 						output.Write(',');
 					output.WriteLine();

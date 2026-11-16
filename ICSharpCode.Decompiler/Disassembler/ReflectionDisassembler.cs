@@ -719,7 +719,10 @@ namespace ICSharpCode.Decompiler.Disassembler
 				WriteConstant(cp.Constant);
 			}
 			output.WriteLine();
+			// 2.3 increases the indent around the parameter's attributes.
+			output.Indent();
 			WriteAttributes(cap.CustomAttributes);
+			output.Unindent();
 		}
 
 		void WriteConstant(object constant)
@@ -858,6 +861,9 @@ namespace ICSharpCode.Decompiler.Disassembler
 			if (method == null)
 				return;
 
+			// 2.3 writes the XML doc / token-RVA comment above accessor declarations too.
+			WriteXmlDocComment(method);
+			WriteTokenAndRvaComment(method);
 			output.Write(keyword);
 			output.Write(' ');
 			method.WriteTo(output);
