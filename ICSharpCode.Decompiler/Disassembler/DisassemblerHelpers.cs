@@ -381,7 +381,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 			VariableReference variableRef = operand as VariableReference;
 			if (variableRef != null) {
-				writer.WriteReference(GetLocalName(localNames, variableRef.Index) ?? variableRef.Index.ToString(), variableRef);
+				writer.WriteReference(Escape(GetLocalName(localNames, variableRef.Index) ?? variableRef.Index.ToString()), variableRef);
 				return;
 			}
 
