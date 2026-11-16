@@ -355,6 +355,23 @@ namespace ICSharpCode.Decompiler
 			}
 		}
 
+		/// <summary>
+		/// dnSpy's 2.3 engine put <c>System</c>/<c>System.*</c> usings first (each group sorted
+		/// case-insensitively); the 3.2 engine sorts every namespace ordinal-ascending. Off by
+		/// default so the engine keeps upstream behaviour.
+		/// </summary>
+		bool sortSystemUsingStatementsFirst;
+
+		public bool SortSystemUsingStatementsFirst {
+			get { return sortSystemUsingStatementsFirst; }
+			set {
+				if (sortSystemUsingStatementsFirst != value) {
+					sortSystemUsingStatementsFirst = value;
+					OnPropertyChanged();
+				}
+			}
+		}
+
 		bool queryExpressions = true;
 
 		public bool QueryExpressions {

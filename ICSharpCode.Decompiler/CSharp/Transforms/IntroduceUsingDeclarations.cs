@@ -57,7 +57,16 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 				// Now add using declarations for those namespaces, in ascending order like the
 				// 2.3 engine. Each declaration is inserted right after the insertion point, so
 				// the loop must go backwards (descending) to produce ascending output order.
-				foreach (string ns in requiredImports.ImportedNamespaces.OrderByDescending(n => n, StringComparer.Ordinal)) {
+				// With SortSystemUsingStatementsFirst (dnSpy's 2.3 default) the System group
+				// comes first and both groups are ordered case-insensitively.
+				IOrderedEnumerable<string> ordered = requiredImports.ImportedNamespaces
+					.OrderByDescending(n => n, StringComparer.Ordinal);
+				if (context.Settings.SortSystemUsingStatementsFirst) {
+					ordered = requiredImports.ImportedNamespaces
+						.OrderBy(n => n == "System" || n.StartsWith("System.", StringComparison.Ordinal) ? 1 : 0)
+						.ThenByDescending(n => n, StringComparer.OrdinalIgnoreCase);
+				}
+				foreach (string ns in ordered) {
 					// In the dnSpy dnlib->cecil bridge some namespaces referenced from method
 					// bodies are absent from the superset (the corresponding member reference
 					// cannot be resolved within the same module). Namespaces the visitor itself
