@@ -145,7 +145,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			{ MethodAttributes.HideBySig, "hidebysig" },
 			{ MethodAttributes.SpecialName, "specialname" },
 			{ MethodAttributes.PInvokeImpl, null },	// handled separately
-			{ MethodAttributes.UnmanagedExport, "export" },
+			{ MethodAttributes.UnmanagedExport, "unmanagedexp" },
 			{ MethodAttributes.RTSpecialName, "rtspecialname" },
 			{ MethodAttributes.RequireSecObject, "reqsecobj" },
 			{ MethodAttributes.NewSlot, "newslot" },
@@ -171,6 +171,8 @@ namespace ICSharpCode.Decompiler.Disassembler
 			{ MethodCallingConvention.ThisCall, "unmanaged thiscall" },
 			{ MethodCallingConvention.FastCall, "unmanaged fastcall" },
 			{ MethodCallingConvention.VarArg, "vararg" },
+			{ (MethodCallingConvention)0x6, "nativevararg" },
+			{ MethodCallingConvention.Unmanaged, "unmanaged" },
 			{ MethodCallingConvention.Generic, null },
 		};
 
@@ -188,6 +190,9 @@ namespace ICSharpCode.Decompiler.Disassembler
 			{ MethodImplAttributes.PreserveSig, "preservesig" },
 			{ MethodImplAttributes.InternalCall, "internalcall" },
 			{ MethodImplAttributes.ForwardRef, "forwardref" },
+			{ MethodImplAttributes.AggressiveInlining, "aggressiveinlining" },
+			{ MethodImplAttributes.AggressiveOptimization, "aggressiveoptimization" },
+			{ unchecked((MethodImplAttributes)0x10000), "securitymitigations" },
 		};
 
 		public void DisassembleMethod(MethodDefinition method)
@@ -933,7 +938,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 		};
 
 		EnumNameCollection<TypeAttributes> typeStringFormat = new EnumNameCollection<TypeAttributes>() {
-			{ TypeAttributes.AutoClass, "auto" },
+			{ TypeAttributes.AutoClass, "autochar" },
 			{ TypeAttributes.AnsiClass, "ansi" },
 			{ TypeAttributes.UnicodeClass, "unicode" },
 		};
@@ -946,8 +951,36 @@ namespace ICSharpCode.Decompiler.Disassembler
 			{ TypeAttributes.Serializable, "serializable" },
 			{ TypeAttributes.WindowsRuntime, "windowsruntime" },
 			{ TypeAttributes.BeforeFieldInit, "beforefieldinit" },
+			{ TypeAttributes.RTSpecialName, "rtspecialname" },
 			{ TypeAttributes.HasSecurity, null },
 		};
+
+		void WriteGenericParameterAttributes(GenericParameter p) {
+			if (p.HasCustomAttributes) {
+				output.Write(".param ");
+				output.Write("type ");
+				output.Write(DisassemblerHelpers.Escape(p.Name));
+				output.WriteLine();
+				output.Indent();
+				WriteAttributes(p.CustomAttributes);
+				output.Unindent();
+			}
+			for (int i = 0; i < p.Constraints.Count; i++) {
+				var constraint = p.Constraints[i];
+				if (constraint.HasCustomAttributes) {
+					output.Write(".param ");
+					output.Write("constraint ");
+					output.Write(DisassemblerHelpers.Escape(p.Name));
+					output.Write(',');
+					output.Write(' ');
+					constraint.ConstraintType.WriteTo(output, ILNameSyntax.TypeName);
+					output.WriteLine();
+					output.Indent();
+					WriteAttributes(constraint.CustomAttributes);
+					output.Unindent();
+				}
+			}
+		}
 
 		public void DisassembleType(TypeDefinition type)
 		{
@@ -999,6 +1032,10 @@ namespace ICSharpCode.Decompiler.Disassembler
 			isInType = true;
 			WriteAttributes(type.CustomAttributes);
 			WriteSecurityDeclarations(type);
+			// 2.3 also emits the generic parameters' own attributes (nullable annotations on
+			// generic parameters show up as .param type <name> blocks).
+			for (int i = 0; i < type.GenericParameters.Count; i++)
+				WriteGenericParameterAttributes(type.GenericParameters[i]);
 			if (type.HasLayoutInfo) {
 				output.WriteLine(".pack {0}", FormatNumber(type.PackingSize));
 				output.WriteLine(".size {0}", FormatNumber(type.ClassSize));
