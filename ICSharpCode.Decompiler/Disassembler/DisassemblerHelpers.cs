@@ -46,35 +46,48 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 	public static class DisassemblerHelpers
 	{
-		public static string OffsetToString(int offset)
+		public static string OffsetToString(int offset, bool upperCase = false)
 		{
-			return string.Format("IL_{0:x4}", offset);
-		}
-		
-		public static string OffsetToString(long offset)
-		{
-			return string.Format("IL_{0:x4}", offset);
+			return string.Format(upperCase ? "IL_{0:X4}" : "IL_{0:x4}", offset);
 		}
 
-		public static void WriteOffsetReference(ITextOutput writer, Instruction instruction)
+		/// <summary>
+		/// Gets the display name of a local. A null <paramref name="localNames"/> means no
+		/// provider is installed (keep the index); when a provider is installed, unnamed locals
+		/// fall back to <c>V_&lt;index&gt;</c> (the 2.3 engine's behavior).
+		/// </summary>
+		static string GetLocalName(string[] localNames, int index) {
+			if (localNames == null)
+				return null;
+			if (index >= 0 && index < localNames.Length && !string.IsNullOrEmpty(localNames[index]))
+				return localNames[index];
+			return "V_" + index;
+		}
+		
+		public static string OffsetToString(long offset, bool upperCase = false)
+		{
+			return string.Format(upperCase ? "IL_{0:X4}" : "IL_{0:x4}", offset);
+		}
+
+		public static void WriteOffsetReference(ITextOutput writer, Instruction instruction, bool upperCase = false)
 		{
 			if (instruction == null)
 				writer.Write("null");
 			else
-				writer.WriteReference(OffsetToString(instruction.Offset), instruction);
+				writer.WriteReference(OffsetToString(instruction.Offset, upperCase), instruction);
 		}
 
-		public static void WriteTo(this ExceptionHandler exceptionHandler, ITextOutput writer)
+		public static void WriteTo(this ExceptionHandler exceptionHandler, ITextOutput writer, bool upperCase = false)
 		{
 			writer.Write(".try ");
-			WriteOffsetReference(writer, exceptionHandler.TryStart);
+			WriteOffsetReference(writer, exceptionHandler.TryStart, upperCase);
 			writer.Write('-');
-			WriteOffsetReference(writer, exceptionHandler.TryEnd);
+			WriteOffsetReference(writer, exceptionHandler.TryEnd, upperCase);
 			writer.Write(' ');
 			writer.Write(exceptionHandler.HandlerType.ToString().ToLowerInvariant());
 			if (exceptionHandler.FilterStart != null) {
 				writer.Write(' ');
-				WriteOffsetReference(writer, exceptionHandler.FilterStart);
+				WriteOffsetReference(writer, exceptionHandler.FilterStart, upperCase);
 				writer.Write(" handler ");
 			}
 			if (exceptionHandler.CatchType != null) {
@@ -82,34 +95,41 @@ namespace ICSharpCode.Decompiler.Disassembler
 				exceptionHandler.CatchType.WriteTo(writer);
 			}
 			writer.Write(' ');
-			WriteOffsetReference(writer, exceptionHandler.HandlerStart);
+			WriteOffsetReference(writer, exceptionHandler.HandlerStart, upperCase);
 			writer.Write('-');
-			WriteOffsetReference(writer, exceptionHandler.HandlerEnd);
+			WriteOffsetReference(writer, exceptionHandler.HandlerEnd, upperCase);
 		}
 
-		public static void WriteTo(this Instruction instruction, ITextOutput writer)
+		public static void WriteTo(this Instruction instruction, ITextOutput writer, bool upperCase = false, int operandAlignment = 0, string[] localNames = null)
 		{
-			writer.WriteDefinition(OffsetToString(instruction.Offset), instruction);
+			writer.WriteDefinition(OffsetToString(instruction.Offset, upperCase), instruction);
 			writer.Write(": ");
 			writer.WriteReference(instruction.OpCode.Name, instruction.OpCode);
 			if (instruction.Operand != null) {
-				writer.Write(' ');
+				if (operandAlignment > 0) {
+					int count = operandAlignment - instruction.OpCode.Name.Length;
+					if (count <= 0)
+						count = 1;
+					writer.Write(new string(' ', count));
+				}
+				else
+					writer.Write(' ');
 				if (instruction.OpCode == OpCodes.Ldtoken) {
 					if (instruction.Operand is MethodReference)
 						writer.Write("method ");
 					else if (instruction.Operand is FieldReference)
 						writer.Write("field ");
 				}
-				WriteOperand(writer, instruction.Operand);
+				WriteOperand(writer, instruction.Operand, upperCase, localNames);
 			}
 		}
-
-		static void WriteLabelList(ITextOutput writer, Instruction[] instructions)
+		
+		static void WriteLabelList(ITextOutput writer, Instruction[] instructions, bool upperCase = false)
 		{
 			writer.Write("(");
 			for (int i = 0; i < instructions.Length; i++) {
 				if (i != 0) writer.Write(", ");
-				WriteOffsetReference(writer, instructions[i]);
+				WriteOffsetReference(writer, instructions[i], upperCase);
 			}
 			writer.Write(")");
 		}
@@ -331,26 +351,26 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 		}
 
-		public static void WriteOperand(ITextOutput writer, object operand)
+		public static void WriteOperand(ITextOutput writer, object operand, bool upperCase = false, string[] localNames = null)
 		{
 			if (operand == null)
 				throw new ArgumentNullException(nameof(operand));
 
 			Instruction targetInstruction = operand as Instruction;
 			if (targetInstruction != null) {
-				WriteOffsetReference(writer, targetInstruction);
+				WriteOffsetReference(writer, targetInstruction, upperCase);
 				return;
 			}
 
 			Instruction[] targetInstructions = operand as Instruction[];
 			if (targetInstructions != null) {
-				WriteLabelList(writer, targetInstructions);
+				WriteLabelList(writer, targetInstructions, upperCase);
 				return;
 			}
 
 			VariableReference variableRef = operand as VariableReference;
 			if (variableRef != null) {
-				writer.WriteReference(variableRef.Index.ToString(), variableRef);
+				writer.WriteReference(GetLocalName(localNames, variableRef.Index) ?? variableRef.Index.ToString(), variableRef);
 				return;
 			}
 

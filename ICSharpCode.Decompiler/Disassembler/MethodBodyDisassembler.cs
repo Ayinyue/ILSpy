@@ -43,8 +43,33 @@ namespace ICSharpCode.Decompiler.Disassembler
 		/// </summary>
 		public bool ShowSequencePoints { get; set; }
 
+		/// <summary>
+		/// Optional provider of the method-body header comment lines (the 2.3 engine's
+		/// <c>// Header Size / Code Size / LocalVarSig Token</c> block). When set, the default
+		/// <c>// Method begins at RVA ...</c> / <c>// Code size ...</c> lines are replaced by the
+		/// returned lines (which include their own <c>//</c> prefix).
+		/// </summary>
+		public Func<MethodDefinition, IEnumerable<string>> GetBodyHeaderComments;
+
+		/// <summary>
+		/// Optional provider of local variable names, indexed by local slot. A null entry (or a
+		/// null array) leaves the name out, matching the 2.3 engine for methods without symbols.
+		/// </summary>
+		public Func<MethodDefinition, string[]> GetLocalNames;
+
+		/// <summary>
+		/// dnSpy's 2.3 IL layout: pad the operand column to
+		/// <see cref="OperandAlignment"/> and use upper-case IL labels. Off by default, which
+		/// matches upstream ILSpy 3.2 (single space, lower-case labels).
+		/// </summary>
+		public bool UseDnSpyLayout { get; set; }
+
+		/// <summary>Operand column width used when <see cref="UseDnSpyLayout"/> is set.</summary>
+		public const int OperandAlignment = 10;
+
 		Collection<SequencePoint> sequencePoints;
 		int nextSequencePointIndex;
+		string[] localNames;
 
 		public MethodBodyDisassembler(ITextOutput output, CancellationToken cancellationToken)
 		{
@@ -56,8 +81,15 @@ namespace ICSharpCode.Decompiler.Disassembler
 		{
 			// start writing IL code
 			MethodDefinition method = body.Method;
-			output.WriteLine("// Method begins at RVA 0x{0:x4}", method.RVA);
-			output.WriteLine("// Code size {0} (0x{0:x})", body.CodeSize);
+			localNames = GetLocalNames?.Invoke(method);
+			if (GetBodyHeaderComments != null) {
+				foreach (var line in GetBodyHeaderComments(method))
+					output.WriteLine(line);
+			}
+			else {
+				output.WriteLine("// Method begins at RVA 0x{0:x4}", method.RVA);
+				output.WriteLine("// Code size {0} (0x{0:x})", body.CodeSize);
+			}
 			output.WriteLine(".maxstack {0}", body.MaxStackSize);
 			if (method.DeclaringType.Module.Assembly != null && method.DeclaringType.Module.Assembly.EntryPoint == method)
 				output.WriteLine(".entrypoint");
@@ -92,6 +124,9 @@ namespace ICSharpCode.Decompiler.Disassembler
 				foreach (var v in body.Variables) {
 					output.WriteDefinition("[" + v.Index + "] ", v);
 					v.VariableType.WriteTo(output);
+					string localName = localNames != null && v.Index >= 0 && v.Index < localNames.Length ? localNames[v.Index] : null;
+					if (!string.IsNullOrEmpty(localName))
+						output.Write(" " + localName);
 					if (v.Index + 1 < body.Variables.Count)
 						output.Write(',');
 					output.WriteLine();
@@ -106,7 +141,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			if (body.HasExceptionHandlers) {
 				output.WriteLine();
 				foreach (var eh in body.ExceptionHandlers) {
-					eh.WriteTo(output);
+					eh.WriteTo(output, UseDnSpyLayout);
 					output.WriteLine();
 				}
 			}
@@ -134,7 +169,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 					output.Write("// loop start");
 					if (s.LoopEntryPoint != null) {
 						output.Write(" (head: ");
-						DisassemblerHelpers.WriteOffsetReference(output, s.LoopEntryPoint);
+						DisassemblerHelpers.WriteOffsetReference(output, s.LoopEntryPoint, UseDnSpyLayout);
 						output.Write(')');
 					}
 					output.WriteLine();
@@ -243,7 +278,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 					nextSequencePointIndex++;
 				}
 			}
-			instruction.WriteTo(output);
+			instruction.WriteTo(output, UseDnSpyLayout, UseDnSpyLayout ? OperandAlignment : 0, localNames);
 		}
 	}
 }
