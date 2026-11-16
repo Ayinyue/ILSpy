@@ -767,7 +767,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			{ PropertyAttributes.HasDefault, "hasdefault" },
 		};
 
-		public void DisassembleProperty(PropertyDefinition property)
+		public void DisassembleProperty(PropertyDefinition property, bool full = true)
 		{
 			WriteXmlDocComment(property);
 			WriteTokenAndRvaComment(property);
@@ -791,15 +791,26 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 			output.Write(")");
 
-			OpenBlock(false);
-			WriteAttributes(property.CustomAttributes);
-			WriteNestedMethod(".get", property.GetMethod);
-			WriteNestedMethod(".set", property.SetMethod);
+			if (full) {
+				OpenBlock(false);
+				WriteAttributes(property.CustomAttributes);
+				WriteNestedMethod(".get", property.GetMethod);
+				WriteNestedMethod(".set", property.SetMethod);
 
-			foreach (var method in property.OtherMethods) {
-				WriteNestedMethod(".other", method);
+				foreach (var method in property.OtherMethods) {
+					WriteNestedMethod(".other", method);
+				}
+				CloseBlock();
 			}
-			CloseBlock();
+			else {
+				// 2.3's short form (used by ISimpleILPrinter to render an operand on one line).
+				output.Write(" { ");
+				if (property.GetMethod != null)
+					output.Write(".get; ");
+				if (property.SetMethod != null)
+					output.Write(".set; ");
+				output.Write("}");
+			}
 		}
 
 		void WriteNestedMethod(string keyword, MethodDefinition method)
@@ -820,7 +831,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			{ EventAttributes.RTSpecialName, "rtspecialname" },
 		};
 
-		public void DisassembleEvent(EventDefinition ev)
+		public void DisassembleEvent(EventDefinition ev, bool full = true)
 		{
 			WriteXmlDocComment(ev);
 			WriteTokenAndRvaComment(ev);
@@ -832,15 +843,28 @@ namespace ICSharpCode.Decompiler.Disassembler
 			ev.EventType.WriteTo(output, ILNameSyntax.TypeName);
 			output.Write(' ');
 			output.Write(DisassemblerHelpers.Escape(ev.Name));
-			OpenBlock(false);
-			WriteAttributes(ev.CustomAttributes);
-			WriteNestedMethod(".addon", ev.AddMethod);
-			WriteNestedMethod(".removeon", ev.RemoveMethod);
-			WriteNestedMethod(".fire", ev.InvokeMethod);
-			foreach (var method in ev.OtherMethods) {
-				WriteNestedMethod(".other", method);
+			if (full) {
+				OpenBlock(false);
+				WriteAttributes(ev.CustomAttributes);
+				WriteNestedMethod(".addon", ev.AddMethod);
+				WriteNestedMethod(".removeon", ev.RemoveMethod);
+				WriteNestedMethod(".fire", ev.InvokeMethod);
+				foreach (var method in ev.OtherMethods) {
+					WriteNestedMethod(".other", method);
+				}
+				CloseBlock();
 			}
-			CloseBlock();
+			else {
+				// 2.3's short form (used by ISimpleILPrinter to render an operand on one line).
+				output.Write(" { ");
+				if (ev.AddMethod != null)
+					output.Write(".addon; ");
+				if (ev.RemoveMethod != null)
+					output.Write(".removeon; ");
+				if (ev.InvokeMethod != null)
+					output.Write(".fire; ");
+				output.Write("}");
+			}
 		}
 		#endregion
 
