@@ -47,6 +47,26 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 		public bool ExpandMemberDefinitions { get; set; } = false;
 
+		/// <summary>
+		/// Optional provider of XML documentation lines for a member. When set, one
+		/// <c>///</c> line is written before the member header, matching the 2.3 engine's
+		/// <c>DisassemblerOptions.GetXmlDocComments</c> hook. The returned strings are the
+		/// documentation text (without the <c>///</c> prefix).
+		/// </summary>
+		public Func<IMemberDefinition, IEnumerable<string>> GetXmlDocComments;
+
+		void WriteXmlDocComment(IMemberDefinition member) {
+			if (GetXmlDocComments == null || member == null)
+				return;
+			foreach (var line in GetXmlDocComments(member)) {
+				if (line == null)
+					continue;
+				output.Write("///");
+				output.Write(line);
+				output.WriteLine();
+			}
+		}
+
 		public ReflectionDisassembler(ITextOutput output, CancellationToken cancellationToken)
 			: this(output, new MethodBodyDisassembler(output, cancellationToken), cancellationToken)
 		{
@@ -114,6 +134,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 		public void DisassembleMethod(MethodDefinition method)
 		{
+			WriteXmlDocComment(method);
 			DisassembleMethodHeader(method);
 			DisassembleMethodBlock(method);
 		}
@@ -689,6 +710,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 		public void DisassembleField(FieldDefinition field)
 		{
+			WriteXmlDocComment(field);
 			output.WriteDefinition(".field ", field);
 			if (field.HasLayoutInfo) {
 				output.Write("[" + field.Offset + "] ");
@@ -727,6 +749,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 		public void DisassembleProperty(PropertyDefinition property)
 		{
+			WriteXmlDocComment(property);
 			// set current member
 			currentMember = property;
 
@@ -778,6 +801,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 		public void DisassembleEvent(EventDefinition ev)
 		{
+			WriteXmlDocComment(ev);
 			// set current member
 			currentMember = ev;
 
@@ -835,6 +859,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 		public void DisassembleType(TypeDefinition type)
 		{
+			WriteXmlDocComment(type);
 			// start writing IL
 			output.WriteDefinition(".class ", type);
 
