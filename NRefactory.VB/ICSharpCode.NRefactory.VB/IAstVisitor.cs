@@ -74,6 +74,16 @@ namespace ICSharpCode.NRefactory.VB {
 		S VisitLabelDeclarationStatement(LabelDeclarationStatement labelDeclarationStatement, T data);
 		S VisitLocalDeclarationStatement(LocalDeclarationStatement localDeclarationStatement, T data);
 		S VisitExpressionStatement(ExpressionStatement expressionStatement, T data);
+
+		S VisitCallStatement(CallStatement callStatement, T data);
+
+		S VisitRaiseEventStatement(RaiseEventStatement raiseEventStatement, T data);
+
+		S VisitTupleExpression(TupleExpression tupleExpression, T data);
+
+		S VisitTupleType(TupleType tupleType, T data);
+
+		S VisitTupleTypeElement(TupleTypeElement tupleTypeElement, T data);
 		S VisitAddRemoveHandlerStatement(AddRemoveHandlerStatement addRemoveHandlerStatement, T data);
 		S VisitWithStatement(WithStatement withStatement, T data);
 		S VisitSyncLockStatement(SyncLockStatement syncLockStatement, T data);

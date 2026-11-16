@@ -845,6 +845,10 @@ namespace ICSharpCode.NRefactory.VB {
 				WriteAttributes(propertyDeclaration.ReturnTypeAttributes);
 				propertyDeclaration.ReturnType.AcceptVisitor(this, data);
 			}
+			// "Property X As T = value Implements I.X": VB wants the initializer before the
+			// Implements clause, otherwise the line is a syntax error (BC30205).
+			if (propertyDeclaration.Variables.Any())
+				WriteCommaSeparatedList(propertyDeclaration.Variables);
 			WriteImplementsClause(propertyDeclaration.ImplementsClause);
 		
 			
@@ -869,8 +873,6 @@ namespace ICSharpCode.NRefactory.VB {
 				formatter.AddHighlightedKeywordReference(reference, start, formatter.NextPosition);
 			}
 			SaveDeclarationOffset();
-			if (propertyDeclaration.Variables.Any())
-				WriteCommaSeparatedList(propertyDeclaration.Variables);
 			NewLine();
 			
 			return EndNode(propertyDeclaration);
@@ -1321,7 +1323,8 @@ namespace ICSharpCode.NRefactory.VB {
 		/// </summary>
 		public static bool IsKeyword(string identifier, AstNode context)
 		{
-			if (identifier == "New") {
+			// VB is case-insensitive, so "new" must be escaped just like "New".
+			if (string.Equals(identifier, "New", StringComparison.OrdinalIgnoreCase)) {
 				if (context.PrevSibling is InstanceExpression)
 					return false;
 				return true;
@@ -2879,6 +2882,54 @@ namespace ICSharpCode.NRefactory.VB {
 			return EndNode(usingStatement);
 		}
 		
+		public object VisitTupleExpression(TupleExpression tupleExpression, object data)
+		{
+			StartNode(tupleExpression);
+			WriteCommaSeparatedListInParenthesis(tupleExpression.Elements, false, CodeBracesRangeFlags.Parentheses);
+			return EndNode(tupleExpression);
+		}
+
+		public object VisitTupleType(TupleType tupleType, object data)
+		{
+			StartNode(tupleType);
+			WriteCommaSeparatedListInParenthesis(tupleType.Elements, false, CodeBracesRangeFlags.Parentheses);
+			return EndNode(tupleType);
+		}
+
+		public object VisitTupleTypeElement(TupleTypeElement tupleTypeElement, object data)
+		{
+			StartNode(tupleTypeElement);
+			if (!tupleTypeElement.Identifier.IsNull) {
+				WriteIdentifier(tupleTypeElement.Identifier);
+				WriteKeyword("As");
+			}
+			tupleTypeElement.Type.AcceptVisitor(this, data);
+			return EndNode(tupleTypeElement);
+		}
+
+		public object VisitRaiseEventStatement(RaiseEventStatement raiseEventStatement, object data)
+		{
+			StartNode(raiseEventStatement);
+
+			WriteKeyword("RaiseEvent");
+			Space();
+			raiseEventStatement.Event.AcceptVisitor(this, data);
+			WriteCommaSeparatedListInParenthesis(raiseEventStatement.Arguments, false, CodeBracesRangeFlags.Parentheses);
+
+			return EndNode(raiseEventStatement);
+		}
+
+		public object VisitCallStatement(CallStatement callStatement, object data)
+		{
+			StartNode(callStatement);
+
+			WriteKeyword("Call");
+			Space();
+			callStatement.Expression.AcceptVisitor(this, data);
+
+			return EndNode(callStatement);
+		}
+
 		public object VisitGoToStatement(GoToStatement goToStatement, object data)
 		{
 			StartNode(goToStatement);
