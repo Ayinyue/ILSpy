@@ -138,6 +138,7 @@ namespace ICSharpCode.Decompiler.IL
 					break;
 			}
 			output.MarkFoldStart("{...}");
+			int braceStart = output.NextPosition;
 			output.WriteLine("{");
 			output.Indent();
 			foreach (var inst in Blocks) {
@@ -152,7 +153,23 @@ namespace ICSharpCode.Decompiler.IL
 			}
 			output.Unindent();
 			output.Write("}");
+			if (options.WriteCodeBracesRanges)
+				output.AddCodeBracesRange(braceStart, output.NextPosition, GetBracesRangeFlags(Kind));
 			output.MarkFoldEnd();
+		}
+
+		static CodeBracesRangeFlags GetBracesRangeFlags(ContainerKind kind) {
+			switch (kind) {
+				case ContainerKind.Loop:
+				case ContainerKind.While:
+				case ContainerKind.DoWhile:
+				case ContainerKind.For:
+					return CodeBracesRangeFlags.LoopBraces;
+				case ContainerKind.Switch:
+					return CodeBracesRangeFlags.SwitchBraces;
+				default:
+					return CodeBracesRangeFlags.OtherBlockBraces;
+			}
 		}
 		
 		protected override int GetChildCount()

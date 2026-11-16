@@ -26,6 +26,8 @@ namespace ICSharpCode.Decompiler.IL
 		private bool useLogicOperationSugar;
 		private bool useFieldSugar;
 		private bool showILRanges;
+		private bool writeCodeBracesRanges;
+		private ILAstDebugInfoWriter debugInfoWriter;
 
 		/// <summary>
 		/// Sugar for logic.not/and/or.
@@ -61,6 +63,34 @@ namespace ICSharpCode.Decompiler.IL
 			set {
 				if (showILRanges != value) {
 					showILRanges = value;
+					OnPropertyChanged();
+				}
+			}
+		}
+
+		/// <summary>
+		/// Emit matching brace pairs for the block structure. Disabled by default so that
+		/// existing consumers see no change.
+		/// </summary>
+		public bool WriteCodeBracesRanges {
+			get { return writeCodeBracesRanges; }
+			set {
+				if (writeCodeBracesRanges != value) {
+					writeCodeBracesRanges = value;
+					OnPropertyChanged();
+				}
+			}
+		}
+
+		/// <summary>
+		/// Optional sink that receives the text span of every instruction written by
+		/// <see cref="Block.WriteTo"/>. Used to build debug information.
+		/// </summary>
+		public ILAstDebugInfoWriter DebugInfoWriter {
+			get { return debugInfoWriter; }
+			set {
+				if (debugInfoWriter != value) {
+					debugInfoWriter = value;
 					OnPropertyChanged();
 				}
 			}

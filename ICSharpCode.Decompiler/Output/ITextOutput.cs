@@ -31,6 +31,17 @@ namespace ICSharpCode.Decompiler
 
 		void MarkFoldStart(string collapsedText = "...", bool defaultCollapsed = false);
 		void MarkFoldEnd();
+
+		/// <summary>
+		/// Gets the offset of the next character that will be written. Used together with
+		/// <see cref="AddCodeBracesRange"/> to emit brace pairs.
+		/// </summary>
+		int NextPosition { get; }
+
+		/// <summary>
+		/// Adds a pair of matching braces (or other delimiting characters) to the output.
+		/// </summary>
+		void AddCodeBracesRange(int start, int end, CodeBracesRangeFlags flags);
 	}
 
 	public static class TextOutputExtensions

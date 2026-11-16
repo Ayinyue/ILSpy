@@ -159,19 +159,26 @@ namespace ICSharpCode.Decompiler.IL
 				output.Write(" (incoming: {0})", IncomingEdgeCount);
 			output.Write(' ');
 			output.MarkFoldStart("{...}");
+			int braceStart = output.NextPosition;
 			output.WriteLine("{");
 			output.Indent();
 			foreach (var inst in Instructions) {
+				int statementStart = output.NextPosition;
 				inst.WriteTo(output, options);
+				options.DebugInfoWriter?.WriteStatement(inst.ILRange, statementStart, output.NextPosition);
 				output.WriteLine();
 			}
 			if (finalInstruction.OpCode != OpCode.Nop) {
 				output.Write("final: ");
+				int statementStart = output.NextPosition;
 				finalInstruction.WriteTo(output, options);
+				options.DebugInfoWriter?.WriteStatement(finalInstruction.ILRange, statementStart, output.NextPosition);
 				output.WriteLine();
 			}
 			output.Unindent();
 			output.Write("}");
+			if (options.WriteCodeBracesRanges)
+				output.AddCodeBracesRange(braceStart, output.NextPosition, CodeBracesRangeFlags.CurlyBraces);
 			output.MarkFoldEnd();
 		}
 		

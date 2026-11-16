@@ -121,6 +121,7 @@ namespace ICSharpCode.Decompiler.IL
 				DelegateType.WriteTo(output);
 				output.Write("]");
 			}
+			int braceStart = output.NextPosition + 1;
 			output.WriteLine(" {");
 			output.Indent();
 
@@ -157,7 +158,10 @@ namespace ICSharpCode.Decompiler.IL
 			}
 
 			output.Unindent();
-			output.WriteLine("}");
+			output.Write("}");
+			if (options.WriteCodeBracesRanges)
+				output.AddCodeBracesRange(braceStart, output.NextPosition, CodeBracesRangeFlags.MethodBraces);
+			output.WriteLine();
 		}
 		
 		LongSet FindUnusedILRanges()

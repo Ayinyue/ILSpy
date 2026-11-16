@@ -295,6 +295,7 @@
     <Compile Include="IL\PointerArithmeticOffset.cs" />
     <Compile Include="IL\ControlFlow\AwaitInCatchTransform.cs" />
     <Compile Include="IL\ILAstWritingOptions.cs" />
+    <Compile Include="IL\ILAstDebugInfoWriter.cs" />
     <Compile Include="IL\Instructions\LdFlda.cs" />
     <Compile Include="IL\Instructions\NullableInstructions.cs" />
     <Compile Include="IL\Instructions\StLoc.cs" />
@@ -422,6 +423,7 @@
     <Compile Include="IL\Transforms\TransformAssignment.cs" />
     <Compile Include="NRExtensions.cs" />
     <Compile Include="Output\ITextOutput.cs" />
+    <Compile Include="Output\CodeBracesRangeFlags.cs" />
     <Compile Include="Output\PlainTextOutput.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Output\TextOutputWriter.cs" />

@@ -243,6 +243,13 @@ namespace ICSharpCode.ILSpy.TextView
 			f.EndOffset = this.TextLength;
 			this.Foldings.Add(f);
 		}
+
+		public int NextPosition => TextLength;
+
+		public void AddCodeBracesRange(int start, int end, ICSharpCode.Decompiler.CodeBracesRangeFlags flags)
+		{
+			// The ILSpy text view has no brace highlighting; dnSpy's bridge consumes these ranges.
+		}
 		
 		public void AddUIElement(Func<UIElement> element)
 		{

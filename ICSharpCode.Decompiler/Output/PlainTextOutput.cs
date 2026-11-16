@@ -30,6 +30,7 @@ namespace ICSharpCode.Decompiler
 		
 		int line = 1;
 		int column = 1;
+		int position;
 		
 		public PlainTextOutput(TextWriter writer)
 		{
@@ -47,6 +48,17 @@ namespace ICSharpCode.Decompiler
 			get {
 				return new TextLocation(line, column + (needsIndent ? indent : 0));
 			}
+		}
+
+		/// <summary>
+		/// Gets the offset of the next character that will be written, including any
+		/// indentation that will be inserted before it.
+		/// </summary>
+		public int NextPosition {
+			get { return position + (needsIndent ? indent : 0); }
+		}
+
+		void ITextOutput.AddCodeBracesRange(int start, int end, CodeBracesRangeFlags flags) {
 		}
 		
 		public override string ToString()
@@ -72,6 +84,7 @@ namespace ICSharpCode.Decompiler
 					writer.Write('\t');
 				}
 				column += indent;
+				position += indent;
 			}
 		}
 		
@@ -80,6 +93,7 @@ namespace ICSharpCode.Decompiler
 			WriteIndent();
 			writer.Write(ch);
 			column++;
+			position++;
 		}
 		
 		public void Write(string text)
@@ -87,6 +101,7 @@ namespace ICSharpCode.Decompiler
 			WriteIndent();
 			writer.Write(text);
 			column += text.Length;
+			position += text.Length;
 		}
 		
 		public void WriteLine()
@@ -95,6 +110,7 @@ namespace ICSharpCode.Decompiler
 			needsIndent = true;
 			line++;
 			column = 1;
+			position += Environment.NewLine.Length;
 		}
 		
 		public void WriteDefinition(string text, object definition, bool isLocal = true)
