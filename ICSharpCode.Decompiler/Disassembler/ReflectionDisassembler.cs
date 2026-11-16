@@ -55,6 +55,13 @@ namespace ICSharpCode.Decompiler.Disassembler
 		/// </summary>
 		public Func<IMemberDefinition, IEnumerable<string>> GetXmlDocComments;
 
+		/// <summary>
+		/// Optional provider of the <c>// Token: 0x... RID: ... RVA: ... File Offset: ...</c>
+		/// comment for a member. Return null or an empty string to skip. Mirrors the 2.3 engine's
+		/// <c>AddComment</c>; the engine writes the <c>//</c> prefix itself.
+		/// </summary>
+		public Func<IMemberDefinition, string> GetTokenAndRvaComment;
+
 		void WriteXmlDocComment(IMemberDefinition member) {
 			if (GetXmlDocComments == null || member == null)
 				return;
@@ -65,6 +72,17 @@ namespace ICSharpCode.Decompiler.Disassembler
 				output.Write(line);
 				output.WriteLine();
 			}
+		}
+
+		void WriteTokenAndRvaComment(IMemberDefinition member) {
+			if (GetTokenAndRvaComment == null || member == null)
+				return;
+			var comment = GetTokenAndRvaComment(member);
+			if (string.IsNullOrEmpty(comment))
+				return;
+			output.Write("//");
+			output.Write(comment);
+			output.WriteLine();
 		}
 
 		public ReflectionDisassembler(ITextOutput output, CancellationToken cancellationToken)
@@ -135,6 +153,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 		public void DisassembleMethod(MethodDefinition method)
 		{
 			WriteXmlDocComment(method);
+			WriteTokenAndRvaComment(method);
 			DisassembleMethodHeader(method);
 			DisassembleMethodBlock(method);
 		}
@@ -711,6 +730,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 		public void DisassembleField(FieldDefinition field)
 		{
 			WriteXmlDocComment(field);
+			WriteTokenAndRvaComment(field);
 			output.WriteDefinition(".field ", field);
 			if (field.HasLayoutInfo) {
 				output.Write("[" + field.Offset + "] ");
@@ -750,6 +770,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 		public void DisassembleProperty(PropertyDefinition property)
 		{
 			WriteXmlDocComment(property);
+			WriteTokenAndRvaComment(property);
 			// set current member
 			currentMember = property;
 
@@ -802,6 +823,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 		public void DisassembleEvent(EventDefinition ev)
 		{
 			WriteXmlDocComment(ev);
+			WriteTokenAndRvaComment(ev);
 			// set current member
 			currentMember = ev;
 
@@ -860,6 +882,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 		public void DisassembleType(TypeDefinition type)
 		{
 			WriteXmlDocComment(type);
+			WriteTokenAndRvaComment(type);
 			// start writing IL
 			output.WriteDefinition(".class ", type);
 
