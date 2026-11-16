@@ -402,9 +402,11 @@
     <Compile Include="IL\Transforms\Stepper.cs" />
     <Compile Include="IL\Transforms\TransformArrayInitializers.cs" />
     <Compile Include="CecilExtensions.cs" />
+    <Compile Include="Disassembler\CecilMemberComparer.cs" />
     <Compile Include="Disassembler\DisassemblerHelpers.cs" />
     <Compile Include="Disassembler\ILStructure.cs" />
     <Compile Include="Disassembler\MethodBodyDisassembler.cs" />
+    <Compile Include="Disassembler\NumberFormatter.cs" />
     <Compile Include="Disassembler\ReflectionDisassembler.cs" />
     <Compile Include="IL\SemanticHelper.cs" />
     <Compile Include="IL\BlockBuilder.cs" />

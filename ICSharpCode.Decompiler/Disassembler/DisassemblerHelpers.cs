@@ -18,6 +18,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using System.Text;
@@ -100,7 +101,8 @@ namespace ICSharpCode.Decompiler.Disassembler
 			WriteOffsetReference(writer, exceptionHandler.HandlerEnd, upperCase);
 		}
 
-		public static void WriteTo(this Instruction instruction, ITextOutput writer, bool upperCase = false, int operandAlignment = 0, string[] localNames = null)
+		public static void WriteTo(this Instruction instruction, ITextOutput writer, bool upperCase = false, int operandAlignment = 0, string[] localNames = null,
+			int maxStringLength = int.MaxValue, NumberFormatter numberFormatter = null, Func<OpCode, string> getOpCodeDocumentation = null)
 		{
 			writer.WriteDefinition(OffsetToString(instruction.Offset, upperCase), instruction);
 			writer.Write(": ");
@@ -120,7 +122,15 @@ namespace ICSharpCode.Decompiler.Disassembler
 					else if (instruction.Operand is FieldReference)
 						writer.Write("field ");
 				}
-				WriteOperand(writer, instruction.Operand, upperCase, localNames);
+				WriteOperand(writer, instruction.Operand, upperCase, localNames, maxStringLength, numberFormatter);
+			}
+
+			// 2.3's ShowILComments: after the instruction (and its operand), write a tab and
+			// the opcode documentation comment. Null means no documentation was found.
+			var doc = getOpCodeDocumentation?.Invoke(instruction.OpCode);
+			if (doc != null) {
+				writer.Write("\t");
+				writer.Write("// " + doc);
 			}
 		}
 		
@@ -351,7 +361,8 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 		}
 
-		public static void WriteOperand(ITextOutput writer, object operand, bool upperCase = false, string[] localNames = null)
+		public static void WriteOperand(ITextOutput writer, object operand, bool upperCase = false, string[] localNames = null,
+			int maxStringLength = int.MaxValue, NumberFormatter numberFormatter = null)
 		{
 			if (operand == null)
 				throw new ArgumentNullException(nameof(operand));
@@ -404,9 +415,14 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 			string s = operand as string;
 			if (s != null) {
-				WriteOperand(writer, s);
+				// MaxStringLength defaults to int.MaxValue (no truncation), which keeps the
+				// engine's original EscapeString path and therefore the default output.
+				if (maxStringLength != int.MaxValue)
+					writer.Write("\"" + ConvertStringMaxLength(s, maxStringLength) + "\"");
+				else
+					WriteOperand(writer, s);
 			} else if (operand is char) {
-				writer.Write(((int)(char)operand).ToString());
+				writer.Write(numberFormatter != null ? numberFormatter.Format((int)(char)operand) : ((int)(char)operand).ToString());
 			} else if (operand is float) {
 				WriteOperand(writer, (float)operand);
 			} else if (operand is double) {
@@ -414,9 +430,27 @@ namespace ICSharpCode.Decompiler.Disassembler
 			} else if (operand is bool) {
 				writer.Write((bool)operand ? "true" : "false");
 			} else {
-				s = ToInvariantCultureString(operand);
+				// The 2.3 engine formatted every integer operand with NumberFormatter. With the
+				// option off the original invariant text is kept; with it on the hex formatter
+				// reproduces 2.3's output.
+				s = numberFormatter != null ? FormatNumber(operand, numberFormatter) : ToInvariantCultureString(operand);
 				writer.Write(s);
 			}
+		}
+
+		static string FormatNumber(object value, NumberFormatter numberFormatter)
+		{
+			switch (value) {
+			case int v: return numberFormatter.Format(v);
+			case uint v: return numberFormatter.Format(v);
+			case long v: return numberFormatter.Format(v);
+			case ulong v: return numberFormatter.Format(v);
+			case byte v: return numberFormatter.Format(v);
+			case ushort v: return numberFormatter.Format(v);
+			case short v: return numberFormatter.Format(v);
+			case sbyte v: return numberFormatter.Format(v);
+			default: return ToInvariantCultureString(value);
+		}
 		}
 
 		public static void WriteOperand(ITextOutput writer, long val)
@@ -473,6 +507,142 @@ namespace ICSharpCode.Decompiler.Disassembler
 			writer.Write('"');
 			writer.Write(EscapeString(operand));
 			writer.Write('"');
+		}
+
+		/// <summary>
+		/// Converts special characters to escape sequences within the given string, truncating
+		/// to <paramref name="maxChars"/> source characters and appending
+		/// <c>[...string is too long...]</c> when the string was longer. This is a port of the
+		/// 2.3 engine's NRefactory <c>TextWriterTokenWriter.ConvertStringMaxLength</c>;
+		/// maxChars &lt;= 0 means no truncation.
+		/// </summary>
+		public static string ConvertStringMaxLength(string str, int maxChars)
+		{
+			int i = 0;
+			bool truncated = false;
+			int length = str.Length;
+			if (maxChars > 0 && length > maxChars) {
+				length = maxChars;
+				truncated = true;
+			}
+			const string TRUNC_MSG = "[...string is too long...]";
+			int end = length;
+			for (; ; i++) {
+				if (i >= end) {
+					if (end != str.Length)
+						str = str.Substring(0, length);
+					if (truncated)
+						return str + TRUNC_MSG;
+					return str;
+				}
+				char c = str[i];
+				switch (c) {
+				case '"':
+				case '\\':
+				case '\0':
+				case '\a':
+				case '\b':
+				case '\f':
+				case '\n':
+				case '\r':
+				case '\t':
+				case '\v':
+					goto escapeChars;
+				case ' ':
+				case '_':
+				case '`':
+				case '^':
+					break;
+				case '\ufffd':
+					goto escapeChars;
+				default:
+					switch (char.GetUnicodeCategory(c)) {
+					case UnicodeCategory.NonSpacingMark:
+					case UnicodeCategory.SpacingCombiningMark:
+					case UnicodeCategory.EnclosingMark:
+					case UnicodeCategory.LineSeparator:
+					case UnicodeCategory.ParagraphSeparator:
+					case UnicodeCategory.Control:
+					case UnicodeCategory.Format:
+					case UnicodeCategory.Surrogate:
+					case UnicodeCategory.PrivateUse:
+					case UnicodeCategory.ConnectorPunctuation:
+					case UnicodeCategory.ModifierSymbol:
+					case UnicodeCategory.OtherNotAssigned:
+					case UnicodeCategory.SpaceSeparator:
+						goto escapeChars;
+					}
+					break;
+				}
+			}
+
+		escapeChars:
+			StringBuilder sb = new StringBuilder();
+			if (i > 0)
+				sb.Append(str, 0, i);
+			for (; i < end; i++) {
+				char ch = str[i];
+				if (ch == '"') {
+					sb.Append("\\\"");
+				} else {
+					sb.Append(ConvertChar(ch));
+				}
+			}
+			if (truncated)
+				sb.Append(TRUNC_MSG);
+			return sb.ToString();
+		}
+
+		static string ConvertChar(char ch)
+		{
+			switch (ch) {
+				case '\\':
+					return "\\\\";
+				case '\0':
+					return "\\0";
+				case '\a':
+					return "\\a";
+				case '\b':
+					return "\\b";
+				case '\f':
+					return "\\f";
+				case '\n':
+					return "\\n";
+				case '\r':
+					return "\\r";
+				case '\t':
+					return "\\t";
+				case '\v':
+					return "\\v";
+				case ' ':
+				case '_':
+				case '`':
+				case '^':
+					// ASCII characters we allow directly in the output even though we don't use
+					// other Unicode characters of the same category.
+					return ch.ToString();
+				case '\ufffd':
+					return "\\u" + ((int)ch).ToString("x4");
+				default:
+					switch (char.GetUnicodeCategory(ch)) {
+					case UnicodeCategory.NonSpacingMark:
+					case UnicodeCategory.SpacingCombiningMark:
+					case UnicodeCategory.EnclosingMark:
+					case UnicodeCategory.LineSeparator:
+					case UnicodeCategory.ParagraphSeparator:
+					case UnicodeCategory.Control:
+					case UnicodeCategory.Format:
+					case UnicodeCategory.Surrogate:
+					case UnicodeCategory.PrivateUse:
+					case UnicodeCategory.ConnectorPunctuation:
+					case UnicodeCategory.ModifierSymbol:
+					case UnicodeCategory.OtherNotAssigned:
+					case UnicodeCategory.SpaceSeparator:
+						return "\\u" + ((int)ch).ToString("x4");
+					default:
+						return ch.ToString();
+				}
+		}
 		}
 
 		public static string EscapeString(string str)

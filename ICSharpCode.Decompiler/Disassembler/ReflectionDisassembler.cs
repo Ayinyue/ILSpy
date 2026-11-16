@@ -18,6 +18,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Mono.Cecil;
 using Mono.Collections.Generic;
@@ -46,6 +47,45 @@ namespace ICSharpCode.Decompiler.Disassembler
 		}
 
 		public bool ExpandMemberDefinitions { get; set; } = false;
+
+		/// <summary>
+		/// Sort nested types/fields/methods/properties/events when disassembling a type
+		/// (2.3's SortMembers). Off by default, which keeps the metadata order.
+		/// </summary>
+		public bool SortMembers { get; set; }
+
+		/// <summary>
+		/// Max length of a string (2.3's MaxStringLength). The default int.MaxValue keeps the
+		/// engine's original untruncated output.
+		/// </summary>
+		public int MaxStringLength { get; set; } = int.MaxValue;
+
+		/// <summary>
+		/// Use hexadecimal numbers (2.3's HexadecimalNumbers). Off by default.
+		/// </summary>
+		public bool HexadecimalNumbers { get; set; }
+
+		NumberFormatter OperandNumberFormatter => HexadecimalNumbers ? NumberFormatter.GetCSharpInstance(hex: true, upper: true) : null;
+		bool TruncateStrings => MaxStringLength != int.MaxValue;
+
+		string ConvertString(string s) => TruncateStrings ? DisassemblerHelpers.ConvertStringMaxLength(s, MaxStringLength) : DisassemblerHelpers.EscapeString(s);
+
+		string FormatNumber(object value) {
+			var nf = OperandNumberFormatter;
+			if (nf == null)
+				return value.ToString();
+			switch (value) {
+			case int v: return nf.Format(v);
+			case uint v: return nf.Format(v);
+			case long v: return nf.Format(v);
+			case ulong v: return nf.Format(v);
+			case byte v: return nf.Format(v);
+			case ushort v: return nf.Format(v);
+			case short v: return nf.Format(v);
+			case sbyte v: return nf.Format(v);
+			default: return value.ToString();
+			}
+		}
 
 		/// <summary>
 		/// Optional provider of XML documentation lines for a member. When set, one
@@ -183,10 +223,10 @@ namespace ICSharpCode.Decompiler.Disassembler
 				output.Write("pinvokeimpl");
 				if (method.HasPInvokeInfo && method.PInvokeInfo != null) {
 					PInvokeInfo info = method.PInvokeInfo;
-					output.Write("(\"" + DisassemblerHelpers.EscapeString(info.Module.Name) + "\"");
+					output.Write("(\"" + ConvertString(info.Module.Name) + "\"");
 
 					if (!string.IsNullOrEmpty(info.EntryPoint) && info.EntryPoint != method.Name)
-						output.Write(" as \"" + DisassemblerHelpers.EscapeString(info.EntryPoint) + "\"");
+						output.Write(" as \"" + ConvertString(info.EntryPoint) + "\"");
 
 					if (info.IsNoMangle)
 						output.Write(" nomangle");
@@ -403,7 +443,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			output.Write(" = ");
 			if (na.Argument.Value is string) {
 				// secdecls use special syntax for strings
-				output.Write("string('{0}')", DisassemblerHelpers.EscapeString((string)na.Argument.Value).Replace("'", "\'"));
+				output.Write("string('{0}')", ConvertString((string)na.Argument.Value).Replace("'", "\'"));
 			} else {
 				WriteConstant(na.Argument.Value);
 			}
@@ -491,11 +531,11 @@ namespace ICSharpCode.Decompiler.Disassembler
 						WriteNativeType(ami.ElementType);
 					output.Write('[');
 					if (ami.Size >= 0) {
-						output.Write(ami.Size.ToString());
+						output.Write(FormatNumber(ami.Size));
 					}
 					if (ami.SizeParameterMultiplier != 0 && ami.SizeParameterIndex >= 0) {
 						output.Write(" + ");
-						output.Write(ami.SizeParameterIndex.ToString());
+						output.Write(FormatNumber(ami.SizeParameterIndex));
 					}
 					output.Write(']');
 					break;
@@ -600,7 +640,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 					output.Write("fixed array");
 					FixedArrayMarshalInfo fami = marshalInfo as FixedArrayMarshalInfo;
 					if (fami != null) {
-						output.Write("[{0}]", fami.Size);
+						output.Write("[{0}]", FormatNumber(fami.Size));
 						if (fami.ElementType != NativeType.None) {
 							output.Write(' ');
 							WriteNativeType(fami.ElementType);
@@ -630,10 +670,10 @@ namespace ICSharpCode.Decompiler.Disassembler
 					if (cmi == null)
 						goto default;
 					output.Write("custom(\"{0}\", \"{1}\"",
-								 DisassemblerHelpers.EscapeString(cmi.ManagedType.FullName),
-								 DisassemblerHelpers.EscapeString(cmi.Cookie));
+							 ConvertString(cmi.ManagedType.FullName),
+							 ConvertString(cmi.Cookie));
 					if (cmi.Guid != Guid.Empty || !string.IsNullOrEmpty(cmi.UnmanagedType)) {
-						output.Write(", \"{0}\", \"{1}\"", cmi.Guid.ToString(), DisassemblerHelpers.EscapeString(cmi.UnmanagedType));
+						output.Write(", \"{0}\", \"{1}\"", cmi.Guid.ToString(), ConvertString(cmi.UnmanagedType));
 					}
 					output.Write(')');
 					break;
@@ -673,7 +713,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 		{
 			if (!cp.HasConstant && !cap.HasCustomAttributes)
 				return;
-			output.Write(".param [{0}]", index);
+			output.Write(".param [{0}]", FormatNumber(index));
 			if (cp.HasConstant) {
 				output.Write(" = ");
 				WriteConstant(cp.Constant);
@@ -698,11 +738,11 @@ namespace ICSharpCode.Decompiler.Disassembler
 					} else if (cd.HasValue && (double.IsNaN(cd.Value) || double.IsInfinity(cd.Value))) {
 						output.Write("0x{0:x16}", BitConverter.DoubleToInt64Bits(cd.Value));
 					} else {
-						DisassemblerHelpers.WriteOperand(output, constant);
+						DisassemblerHelpers.WriteOperand(output, constant, maxStringLength: MaxStringLength, numberFormatter: OperandNumberFormatter);
 					}
 					output.Write(')');
 				} else {
-					DisassemblerHelpers.WriteOperand(output, constant);
+					DisassemblerHelpers.WriteOperand(output, constant, maxStringLength: MaxStringLength, numberFormatter: OperandNumberFormatter);
 				}
 			}
 		}
@@ -733,7 +773,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			WriteTokenAndRvaComment(field);
 			output.WriteDefinition(".field ", field);
 			if (field.HasLayoutInfo) {
-				output.Write("[" + field.Offset + "] ");
+				output.Write("[" + FormatNumber(field.Offset) + "] ");
 			}
 			WriteEnum(field.Attributes & FieldAttributes.FieldAccessMask, fieldVisibility);
 			const FieldAttributes hasXAttributes = FieldAttributes.HasDefault | FieldAttributes.HasFieldMarshal | FieldAttributes.HasFieldRVA;
@@ -954,13 +994,13 @@ namespace ICSharpCode.Decompiler.Disassembler
 			WriteAttributes(type.CustomAttributes);
 			WriteSecurityDeclarations(type);
 			if (type.HasLayoutInfo) {
-				output.WriteLine(".pack {0}", type.PackingSize);
-				output.WriteLine(".size {0}", type.ClassSize);
+				output.WriteLine(".pack {0}", FormatNumber(type.PackingSize));
+				output.WriteLine(".size {0}", FormatNumber(type.ClassSize));
 				output.WriteLine();
 			}
 			if (type.HasNestedTypes) {
 				output.WriteLine("// Nested Types");
-				foreach (var nestedType in type.NestedTypes) {
+				foreach (var nestedType in GetNestedTypes(type)) {
 					cancellationToken.ThrowIfCancellationRequested();
 					DisassembleType(nestedType);
 					output.WriteLine();
@@ -969,7 +1009,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 			if (type.HasFields) {
 				output.WriteLine("// Fields");
-				foreach (var field in type.Fields) {
+				foreach (var field in GetFields(type)) {
 					cancellationToken.ThrowIfCancellationRequested();
 					DisassembleField(field);
 				}
@@ -977,7 +1017,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 			if (type.HasMethods) {
 				output.WriteLine("// Methods");
-				foreach (var m in type.Methods) {
+				foreach (var m in GetMethods(type)) {
 					cancellationToken.ThrowIfCancellationRequested();
 					DisassembleMethod(m);
 					output.WriteLine();
@@ -985,7 +1025,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 			if (type.HasEvents) {
 				output.WriteLine("// Events");
-				foreach (var ev in type.Events) {
+				foreach (var ev in GetEvents(type)) {
 					cancellationToken.ThrowIfCancellationRequested();
 					DisassembleEvent(ev);
 					output.WriteLine();
@@ -994,7 +1034,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 			if (type.HasProperties) {
 				output.WriteLine("// Properties");
-				foreach (var prop in type.Properties) {
+				foreach (var prop in GetProperties(type)) {
 					cancellationToken.ThrowIfCancellationRequested();
 					DisassembleProperty(prop);
 				}
@@ -1002,6 +1042,48 @@ namespace ICSharpCode.Decompiler.Disassembler
 			}
 			CloseBlock("end of class " + (type.DeclaringType != null ? type.Name : type.FullName));
 			isInType = oldIsInType;
+		}
+
+		/// <summary>2.3's dnlib GetNestedTypes(bool): nested types are always sortable.</summary>
+		IEnumerable<TypeDefinition> GetNestedTypes(TypeDefinition type) {
+			if (!SortMembers)
+				return type.NestedTypes;
+			return Sort(type.NestedTypes, CecilMemberComparer.TypeDef);
+		}
+
+		/// <summary>2.3's dnlib GetFields(bool): fields sort only for auto-layout types.</summary>
+		IEnumerable<FieldDefinition> GetFields(TypeDefinition type) {
+			if (!SortMembers || (type.Attributes & TypeAttributes.LayoutMask) != TypeAttributes.AutoLayout)
+				return type.Fields;
+			return Sort(type.Fields, CecilMemberComparer.FieldDef);
+		}
+
+		/// <summary>2.3's dnlib GetMethods(bool)/GetEvents/GetProperties: not for imported interfaces.</summary>
+		static bool CanSortMethods(TypeDefinition type) =>
+			!((type.Attributes & TypeAttributes.ClassSemanticMask) == TypeAttributes.Interface && (type.Attributes & TypeAttributes.Import) != 0);
+
+		IEnumerable<MethodDefinition> GetMethods(TypeDefinition type) {
+			if (!SortMembers || !CanSortMethods(type))
+				return type.Methods;
+			return Sort(type.Methods, CecilMemberComparer.MethodDef);
+		}
+
+		IEnumerable<EventDefinition> GetEvents(TypeDefinition type) {
+			if (!SortMembers || !CanSortMethods(type))
+				return type.Events;
+			return Sort(type.Events, CecilMemberComparer.EventDef);
+		}
+
+		IEnumerable<PropertyDefinition> GetProperties(TypeDefinition type) {
+			if (!SortMembers || !CanSortMethods(type))
+				return type.Properties;
+			return Sort(type.Properties, CecilMemberComparer.PropertyDef);
+		}
+
+		static T[] Sort<T>(Collection<T> members, IComparer<T> comparer) {
+			var ary = members.ToArray();
+			Array.Sort(ary, comparer);
+			return ary;
 		}
 
 		void WriteTypeParameters(ITextOutput output, IGenericParameterProvider p)

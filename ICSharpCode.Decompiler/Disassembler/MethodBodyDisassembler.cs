@@ -67,6 +67,26 @@ namespace ICSharpCode.Decompiler.Disassembler
 		/// <summary>Operand column width used when <see cref="UseDnSpyLayout"/> is set.</summary>
 		public const int OperandAlignment = 10;
 
+		/// <summary>
+		/// Max length of a string operand. 2.3's option; the default (int.MaxValue) keeps the
+		/// engine's original untruncated output.
+		/// </summary>
+		public int MaxStringLength { get; set; } = int.MaxValue;
+
+		/// <summary>
+		/// Format integer operands (and the .maxstack / local index numbers) as hexadecimal,
+		/// matching 2.3's HexadecimalNumbers option. Off by default.
+		/// </summary>
+		public bool HexadecimalNumbers { get; set; }
+
+		/// <summary>
+		/// Optional opcode documentation provider (2.3's ShowILComments). When set, every
+		/// instruction is followed by a tab and a <c>// </c> comment with the documentation.
+		/// </summary>
+		public Func<OpCode, string> GetOpCodeDocumentation { get; set; }
+
+		NumberFormatter OperandNumberFormatter => HexadecimalNumbers ? NumberFormatter.GetCSharpInstance(hex: true, upper: true) : null;
+
 		Collection<SequencePoint> sequencePoints;
 		int nextSequencePointIndex;
 		string[] localNames;
@@ -90,7 +110,13 @@ namespace ICSharpCode.Decompiler.Disassembler
 				output.WriteLine("// Method begins at RVA 0x{0:x4}", method.RVA);
 				output.WriteLine("// Code size {0} (0x{0:x})", body.CodeSize);
 			}
-			output.WriteLine(".maxstack {0}", body.MaxStackSize);
+			var numberFormatter = OperandNumberFormatter;
+			output.Write(".maxstack ");
+			if (numberFormatter != null)
+				output.Write(numberFormatter.Format(body.MaxStackSize));
+			else
+				output.Write(body.MaxStackSize.ToString());
+			output.WriteLine();
 			if (method.DeclaringType.Module.Assembly != null && method.DeclaringType.Module.Assembly.EntryPoint == method)
 				output.WriteLine(".entrypoint");
 
@@ -121,8 +147,10 @@ namespace ICSharpCode.Decompiler.Disassembler
 					output.Write("init ");
 				output.WriteLine("(");
 				output.Indent();
+				var localsNumberFormatter = OperandNumberFormatter;
 				foreach (var v in body.Variables) {
-					output.WriteDefinition("[" + v.Index + "] ", v);
+					var indexText = localsNumberFormatter != null ? localsNumberFormatter.Format(v.Index) : v.Index.ToString();
+					output.WriteDefinition("[" + indexText + "] ", v);
 					v.VariableType.WriteTo(output);
 					string localName = localNames != null && v.Index >= 0 && v.Index < localNames.Length ? localNames[v.Index] : null;
 					if (!string.IsNullOrEmpty(localName))
@@ -278,7 +306,7 @@ namespace ICSharpCode.Decompiler.Disassembler
 					nextSequencePointIndex++;
 				}
 			}
-			instruction.WriteTo(output, UseDnSpyLayout, UseDnSpyLayout ? OperandAlignment : 0, localNames);
+			instruction.WriteTo(output, UseDnSpyLayout, UseDnSpyLayout ? OperandAlignment : 0, localNames, MaxStringLength, OperandNumberFormatter, GetOpCodeDocumentation);
 		}
 	}
 }
