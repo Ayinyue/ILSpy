@@ -320,18 +320,18 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 				case BraceStyle.NextLine:
 					if (!isAtStartOfLine)
 						NewLine();
-					writer.WriteToken(Roles.LBrace, "{");
+writer.WriteToken(Roles.LBrace, "{");
 					break;
 				case BraceStyle.NextLineShifted:
 					NewLine();
 					writer.Indent();
-					writer.WriteToken(Roles.LBrace, "{");
+writer.WriteToken(Roles.LBrace, "{");
 					NewLine();
 					return;
 				case BraceStyle.NextLineShifted2:
 					NewLine();
 					writer.Indent();
-					writer.WriteToken(Roles.LBrace, "{");
+writer.WriteToken(Roles.LBrace, "{");
 					break;
 				default:
 					throw new ArgumentOutOfRangeException ();
@@ -348,18 +348,18 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 				case BraceStyle.EndOfLineWithoutSpace:
 				case BraceStyle.NextLine:
 					writer.Unindent();
-					writer.WriteToken(Roles.RBrace, "}");
+writer.WriteToken(Roles.RBrace, "}");
 					isAtStartOfLine = false;
 					break;
 				case BraceStyle.BannerStyle:
 				case BraceStyle.NextLineShifted:
-					writer.WriteToken(Roles.RBrace, "}");
+writer.WriteToken(Roles.RBrace, "}");
 					isAtStartOfLine = false;
 					writer.Unindent();
 					break;
 				case BraceStyle.NextLineShifted2:
 					writer.Unindent();
-					writer.WriteToken(Roles.RBrace, "}");
+writer.WriteToken(Roles.RBrace, "}");
 					isAtStartOfLine = false;
 					writer.Unindent();
 					break;
@@ -2096,14 +2096,35 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 			WriteKeyword(IndexerDeclaration.ThisKeywordRole);
 			Space(policy.SpaceBeforeMethodDeclarationParentheses);
 			WriteCommaSeparatedListInBrackets(indexerDeclaration.Parameters, policy.SpaceWithinMethodDeclarationParentheses);
-			OpenBrace(policy.PropertyBraceStyle);
-			// output get/set in their original order
-			foreach (AstNode node in indexerDeclaration.Children) {
-				if (node.Role == IndexerDeclaration.GetterRole || node.Role == IndexerDeclaration.SetterRole) {
-					node.AcceptVisitor(this);
+			bool isSingleLine =
+				policy.AutoPropertyFormatting == PropertyFormatting.ForceOneLine
+				&& (indexerDeclaration.Getter.IsNull || indexerDeclaration.Getter.Body.IsNull)
+				&& (indexerDeclaration.Setter.IsNull || indexerDeclaration.Setter.Body.IsNull)
+				&& !indexerDeclaration.Getter.Attributes.Any()
+				&& !indexerDeclaration.Setter.Attributes.Any();
+			if (isSingleLine) {
+				Space();
+				WriteToken("{", Roles.LBrace);
+				Space();
+				foreach (AstNode node in indexerDeclaration.Children) {
+					if (node.Role == IndexerDeclaration.GetterRole || node.Role == IndexerDeclaration.SetterRole) {
+						WriteKeyword(node.Role == IndexerDeclaration.GetterRole ? "get" : "set", node.Role);
+						WriteToken(Roles.Semicolon);
+						Space();
+					}
 				}
+				WriteToken("}", Roles.RBrace);
 			}
-			CloseBrace(policy.PropertyBraceStyle);
+			else {
+				OpenBrace(policy.PropertyBraceStyle);
+				// output get/set in their original order
+				foreach (AstNode node in indexerDeclaration.Children) {
+					if (node.Role == IndexerDeclaration.GetterRole || node.Role == IndexerDeclaration.SetterRole) {
+						node.AcceptVisitor(this);
+					}
+				}
+				CloseBrace(policy.PropertyBraceStyle);
+			}
 			NewLine();
 			EndNode(indexerDeclaration);
 		}
@@ -2197,14 +2218,37 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 			WritePrivateImplementationType(propertyDeclaration.PrivateImplementationType);
 			WriteIdentifier(propertyDeclaration.NameToken);
 			if (propertyDeclaration.ExpressionBody.IsNull) {
-				OpenBrace(policy.PropertyBraceStyle);
-				// output get/set in their original order
-				foreach (AstNode node in propertyDeclaration.Children) {
-					if (node.Role == IndexerDeclaration.GetterRole || node.Role == IndexerDeclaration.SetterRole) {
-						node.AcceptVisitor(this);
+				// dnSpy's 2.3 visitor (NRefactory) collapsed an all-empty accessor list onto the
+				// declaration line; its PropertyFormatting.SingleLine is ForceOneLine here.
+				bool isSingleLine =
+					policy.AutoPropertyFormatting == PropertyFormatting.ForceOneLine
+					&& (propertyDeclaration.Getter.IsNull || propertyDeclaration.Getter.Body.IsNull)
+					&& (propertyDeclaration.Setter.IsNull || propertyDeclaration.Setter.Body.IsNull)
+					&& !propertyDeclaration.Getter.Attributes.Any()
+					&& !propertyDeclaration.Setter.Attributes.Any();
+				if (isSingleLine) {
+					Space();
+					WriteToken("{", Roles.LBrace);
+					Space();
+					foreach (AstNode node in propertyDeclaration.Children) {
+						if (node.Role == IndexerDeclaration.GetterRole || node.Role == IndexerDeclaration.SetterRole) {
+							WriteKeyword(node.Role == IndexerDeclaration.GetterRole ? "get" : "set", node.Role);
+							WriteToken(Roles.Semicolon);
+							Space();
+						}
 					}
+					WriteToken("}", Roles.RBrace);
 				}
-				CloseBrace(policy.PropertyBraceStyle);
+				else {
+					OpenBrace(policy.PropertyBraceStyle);
+					// output get/set in their original order
+					foreach (AstNode node in propertyDeclaration.Children) {
+						if (node.Role == IndexerDeclaration.GetterRole || node.Role == IndexerDeclaration.SetterRole) {
+							node.AcceptVisitor(this);
+						}
+					}
+					CloseBrace(policy.PropertyBraceStyle);
+				}
 				if (!propertyDeclaration.Initializer.IsNull) {
 					Space(policy.SpaceAroundAssignment);
 					WriteToken(Roles.Assign);
