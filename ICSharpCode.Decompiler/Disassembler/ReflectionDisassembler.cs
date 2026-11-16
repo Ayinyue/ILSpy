@@ -319,6 +319,10 @@ namespace ICSharpCode.Decompiler.Disassembler
 					output.WriteLine();
 				}
 			}
+			// 2.3 also emits the method's own generic parameters' attributes (.param type T),
+			// before the return parameter and the parameters.
+			for (int i = 0; i < method.GenericParameters.Count; i++)
+				WriteGenericParameterAttributes(method.GenericParameters[i]);
 			WriteParameterAttributes(0, method.MethodReturnType, method.MethodReturnType);
 			foreach (var p in method.Parameters) {
 				WriteParameterAttributes(p.Index + 1, p, p);
