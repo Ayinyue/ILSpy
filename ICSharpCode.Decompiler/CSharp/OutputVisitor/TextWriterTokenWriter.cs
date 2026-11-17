@@ -256,22 +256,28 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 				textWriter.Write(str);
 			} else if (value is float) {
 				float f = (float)value;
-				if (float.IsInfinity(f) || float.IsNaN(f)) {
-					// Strictly speaking, these aren't PrimitiveExpressions;
-					// but we still support writing these to make life easier for code generators.
+				// dnSpy 2.3 (ILAstOptimizer.cs:595-620) prints these as float.<name>.
+				string specialFloatName;
+				if (float.IsNaN(f))
+					specialFloatName = "NaN";
+				else if (float.IsPositiveInfinity(f))
+					specialFloatName = "PositiveInfinity";
+				else if (float.IsNegativeInfinity(f))
+					specialFloatName = "NegativeInfinity";
+				else if (f == float.Epsilon)
+					specialFloatName = "Epsilon";
+				else if (f == float.MinValue)
+					specialFloatName = "MinValue";
+				else if (f == float.MaxValue)
+					specialFloatName = "MaxValue";
+				else
+					specialFloatName = null;
+				if (specialFloatName != null) {
 					textWriter.Write("float");
 					column += 5;
 					WriteToken(Roles.Dot, ".");
-					if (float.IsPositiveInfinity(f)) {
-						textWriter.Write("PositiveInfinity");
-						column += "PositiveInfinity".Length;
-					} else if (float.IsNegativeInfinity(f)) {
-						textWriter.Write("NegativeInfinity");
-						column += "NegativeInfinity".Length;
-					} else {
-						textWriter.Write("NaN");
-						column += 3;
-					}
+					textWriter.Write(specialFloatName);
+					column += specialFloatName.Length;
 					return;
 				}
 				if (f == 0 && 1 / f == float.NegativeInfinity) {
@@ -286,22 +292,28 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 				textWriter.Write(str);
 			} else if (value is double) {
 				double f = (double)value;
-				if (double.IsInfinity(f) || double.IsNaN(f)) {
-					// Strictly speaking, these aren't PrimitiveExpressions;
-					// but we still support writing these to make life easier for code generators.
+				// dnSpy 2.3 (ILAstOptimizer.cs:623-648) prints these as double.<name>.
+				string specialDoubleName;
+				if (double.IsNaN(f))
+					specialDoubleName = "NaN";
+				else if (double.IsPositiveInfinity(f))
+					specialDoubleName = "PositiveInfinity";
+				else if (double.IsNegativeInfinity(f))
+					specialDoubleName = "NegativeInfinity";
+				else if (f == double.Epsilon)
+					specialDoubleName = "Epsilon";
+				else if (f == double.MinValue)
+					specialDoubleName = "MinValue";
+				else if (f == double.MaxValue)
+					specialDoubleName = "MaxValue";
+				else
+					specialDoubleName = null;
+				if (specialDoubleName != null) {
 					textWriter.Write("double");
 					column += 6;
 					WriteToken(Roles.Dot, ".");
-					if (double.IsPositiveInfinity(f)) {
-						textWriter.Write("PositiveInfinity");
-						column += "PositiveInfinity".Length;
-					} else if (double.IsNegativeInfinity(f)) {
-						textWriter.Write("NegativeInfinity");
-						column += "NegativeInfinity".Length;
-					} else {
-						textWriter.Write("NaN");
-						column += 3;
-					}
+					textWriter.Write(specialDoubleName);
+					column += specialDoubleName.Length;
 					return;
 				}
 				if (f == 0 && 1 / f == double.NegativeInfinity) {
