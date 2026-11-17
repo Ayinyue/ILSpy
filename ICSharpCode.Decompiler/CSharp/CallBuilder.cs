@@ -400,8 +400,12 @@ namespace ICSharpCode.Decompiler.CSharp
 						requireTarget = true; // always use target for base/this-ctor-call, the constructor initializer pattern depends on this
 					else if (target.Expression is BaseReferenceExpression)
 						requireTarget = (expectedTargetDetails.CallOpCode != OpCode.CallVirt && method.IsVirtual);
-					else
-						requireTarget = !(target.Expression is ThisReferenceExpression);
+					else {
+						// dnSpy 2.3 always qualified instance member accesses with 'this.' (NRefactory output layer).
+						// This branch is only reached for non-static, non-base, non-.ctor calls, so forcing the
+						// target here only changes 'this.Member()' (previously emitted as 'Member()').
+						requireTarget = true;
+					}
 				}
 				targetResolveResult = requireTarget ? target.ResolveResult : null;
 			} else {
@@ -711,7 +715,8 @@ namespace ICSharpCode.Decompiler.CSharp
 			else if (method.IsStatic)
 				requireTarget = !expressionBuilder.IsCurrentOrContainingType(method.DeclaringTypeDefinition);
 			else
-				requireTarget = !(target.Expression is ThisReferenceExpression);
+				// dnSpy 2.3 always qualified instance property/event/indexer accesses with 'this.'.
+				requireTarget = true;
 			bool targetCasted = false;
 			bool isSetter = method.ReturnType.IsKnownType(KnownTypeCode.Void);
 			bool argumentsCasted = (isSetter && method.Parameters.Count == 1) || (!isSetter && method.Parameters.Count == 0);
@@ -831,7 +836,8 @@ namespace ICSharpCode.Decompiler.CSharp
 					memberDeclaringType: method.DeclaringType);
 				target = ExpressionBuilder.UnwrapBoxingConversion(target);
 				requireTarget = expressionBuilder.HidesVariableWithName(method.Name)
-					|| (method.IsStatic ? !expressionBuilder.IsCurrentOrContainingType(method.DeclaringTypeDefinition) : !(target.Expression is ThisReferenceExpression));
+					// dnSpy 2.3 always qualified instance method groups with 'this.' (new D(this.Method)).
+					|| (method.IsStatic ? !expressionBuilder.IsCurrentOrContainingType(method.DeclaringTypeDefinition) : true);
 			}
 			var expectedTargetDetails = new ExpectedTargetDetails {
 				CallOpCode = inst.OpCode

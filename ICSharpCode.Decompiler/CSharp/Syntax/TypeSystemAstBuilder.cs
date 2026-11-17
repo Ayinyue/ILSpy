@@ -463,10 +463,10 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 				mt.MemberName = mt.MemberName.Substring(0, mt.MemberName.Length - 9);
 			}
 			foreach (ResolveResult arg in attribute.PositionalArguments) {
-				attr.Arguments.Add(ConvertConstantValue(arg));
+				attr.Arguments.Add(ConvertConstantValue(arg, isAttributeArgument: true));
 			}
 			foreach (var pair in attribute.NamedArguments) {
-				NamedExpression namedArgument = new NamedExpression(pair.Key.Name, ConvertConstantValue(pair.Value));
+				NamedExpression namedArgument = new NamedExpression(pair.Key.Name, ConvertConstantValue(pair.Value, isAttributeArgument: true));
 				if (AddResolveResultAnnotations)
 					namedArgument.AddAnnotation(new MemberResolveResult(new InitializedObjectResolveResult(attribute.AttributeType), pair.Key));
 				attr.Arguments.Add(namedArgument);
@@ -547,7 +547,7 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		/// However, the returned expression will always be implicitly convertible to <c>rr.Type</c>,
 		/// and will have the correct value when being converted in this way.
 		/// </summary>
-		public Expression ConvertConstantValue(ResolveResult rr)
+		public Expression ConvertConstantValue(ResolveResult rr, bool isAttributeArgument = false)
 		{
 			if (rr == null)
 				throw new ArgumentNullException("rr");
@@ -575,18 +575,18 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 				
 				if (acrr.SizeArguments != null && acrr.InitializerElements == null) {
 					ace.AdditionalArraySpecifiers.FirstOrNullObject().Remove();
-					ace.Arguments.AddRange(acrr.SizeArguments.Select(ConvertConstantValue));
+					ace.Arguments.AddRange(acrr.SizeArguments.Select(a => ConvertConstantValue(a, isAttributeArgument)));
 				}
 				if (acrr.InitializerElements != null) {
 					ArrayInitializerExpression initializer = new ArrayInitializerExpression();
-					initializer.Elements.AddRange(acrr.InitializerElements.Select(ConvertConstantValue));
+					initializer.Elements.AddRange(acrr.InitializerElements.Select(a => ConvertConstantValue(a, isAttributeArgument)));
 					ace.Initializer = initializer;
 				}
 				if (AddResolveResultAnnotations)
 					ace.AddAnnotation(rr);
 				return ace;
 			} else if (rr.IsCompileTimeConstant) {
-				var expr = ConvertConstantValue(rr.Type, rr.ConstantValue);
+				var expr = ConvertConstantValue(rr.Type, rr.ConstantValue, isAttributeArgument);
 				if (isBoxing && rr.Type.IsCSharpSmallIntegerType()) {
 					// C# does not have small integer literal types.
 					// We need to add a cast so that the integer literal gets boxed as the correct type.
@@ -610,7 +610,7 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		/// which is of type <c>int</c>.
 		/// However, the returned expression will always be implicitly convertible to <paramref name="type"/>.
 		/// </summary>
-		public Expression ConvertConstantValue(IType type, object constantValue)
+		public Expression ConvertConstantValue(IType type, object constantValue, bool isAttributeArgument = false)
 		{
 			if (type == null)
 				throw new ArgumentNullException("type");
@@ -627,6 +627,20 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 					return expr;
 				}
 			} else if (type.Kind == TypeKind.Enum) {
+				var enumDefinition = type.GetDefinition();
+				// Match the 2.3 engine: for enum-typed attribute arguments, 2.3 converts through
+				// MakePrimitive(), which expands enum member names only when the enum definition
+				// can be resolved. In the 2.3 harness referenced enums (e.g. AttributeTargets)
+				// do not resolve, so the underlying numeric value is printed instead
+				// (e.g. [AttributeUsage(27524, ...)]); enums defined in the decompiled module
+				// still print their member names. Reproduce that split here.
+				if (isAttributeArgument && enumDefinition != null && enumDefinition.ParentAssembly != null
+					&& !enumDefinition.ParentAssembly.IsMainAssembly) {
+					var enumValueExpr = new PrimitiveExpression(constantValue);
+					if (AddResolveResultAnnotations)
+						enumValueExpr.AddAnnotation(new ConstantResolveResult(type, constantValue));
+					return enumValueExpr;
+				}
 				return ConvertEnumValue(type, (long)CSharpPrimitiveCast.Cast(TypeCode.Int64, constantValue, false));
 			} else {
 				if (IsSpecialConstant(type, constantValue, out var expr))

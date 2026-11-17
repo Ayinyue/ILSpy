@@ -198,8 +198,12 @@ namespace ICSharpCode.Decompiler.CSharp
 				nonVirtualInvocation: true,
 				memberStatic: field.IsStatic,
 				memberDeclaringType: field.DeclaringType);
+			// dnSpy 2.3 (NRefactory output layer) always qualified instance member accesses with 'this.'.
+			// Keep that behavior: when the target is 'this', always emit the target; when it is an
+			// implicit 'base' access (TranslateTarget converted ldthis -> base), preserve the existing
+			// unqualified output so base accesses are not affected.
 			bool requireTarget = HidesVariableWithName(field.Name)
-				|| (field.IsStatic ? !IsCurrentOrContainingType(field.DeclaringTypeDefinition) : !(target.Expression is ThisReferenceExpression || target.Expression is BaseReferenceExpression));
+				|| (field.IsStatic ? !IsCurrentOrContainingType(field.DeclaringTypeDefinition) : !(target.Expression is BaseReferenceExpression));
 			bool targetCasted = false;
 			var targetResolveResult = requireTarget ? target.ResolveResult : null;
 
