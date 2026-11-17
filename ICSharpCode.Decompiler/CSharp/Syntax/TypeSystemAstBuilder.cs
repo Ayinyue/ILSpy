@@ -299,19 +299,25 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 				} else {
 					localTypeArguments = Empty<IType>.Array;
 				}
-				ResolveResult rr = resolver.LookupSimpleNameOrTypeName(typeDef.Name, localTypeArguments, NameLookupMode);
-				TypeResolveResult trr = rr as TypeResolveResult;
-				if (trr != null || (localTypeArguments.Length == 0 && resolver.IsVariableReferenceWithSameType(rr, typeDef.Name, out trr))) {
-					if (!trr.IsError && TypeMatches(trr.Type, typeDef, typeArguments)) {
-						// We can use the short type name
-						SimpleType shortResult = new SimpleType(typeDef.Name);
-						AddTypeArguments(shortResult, typeDef.TypeParameters, typeArguments, outerTypeParameterCount, typeDef.TypeParameterCount);
-						return shortResult;
+				// dnSpy 2.3 always qualifies nested types (AstBuilder.ConvertType: if DeclaringType != null
+				// it builds MemberType{Target = ConvertType(DeclaringType), ...}), so the short-name
+				// lookup must not apply to them - otherwise 'Outer.Inner' decompiles as 'Inner'
+				// whenever the name happens to resolve in the current scope.
+				if (genericType.DeclaringType == null) {
+					ResolveResult rr = resolver.LookupSimpleNameOrTypeName(typeDef.Name, localTypeArguments, NameLookupMode);
+					TypeResolveResult trr = rr as TypeResolveResult;
+					if (trr != null || (localTypeArguments.Length == 0 && resolver.IsVariableReferenceWithSameType(rr, typeDef.Name, out trr))) {
+						if (!trr.IsError && TypeMatches(trr.Type, typeDef, typeArguments)) {
+							// We can use the short type name
+							SimpleType shortResult = new SimpleType(typeDef.Name);
+							AddTypeArguments(shortResult, typeDef.TypeParameters, typeArguments, outerTypeParameterCount, typeDef.TypeParameterCount);
+							return shortResult;
+						}
 					}
 				}
 			}
 			
-			if (AlwaysUseShortTypeNames || (typeDef == null && genericType.DeclaringType == null)) {
+			if (genericType.DeclaringType == null && (AlwaysUseShortTypeNames || typeDef == null)) {
 				var shortResult = new SimpleType(genericType.Name);
 				AddTypeArguments(shortResult, genericType.TypeParameters, typeArguments, outerTypeParameterCount, genericType.TypeParameterCount);
 				return shortResult;
