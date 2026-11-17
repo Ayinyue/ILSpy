@@ -631,29 +631,82 @@ writer.WriteToken(Roles.RBrace, "}");
 		
 		protected virtual void PrintInitializerElements(AstNodeCollection<Expression> elements)
 		{
-			BraceStyle style;
-			if (policy.ArrayInitializerWrapping == Wrapping.WrapAlways) {
-				style = BraceStyle.NextLine;
-			} else {
-				style = BraceStyle.EndOfLine;
-			}
-			OpenBrace(style);
-			bool isFirst = true;
-			AstNode last = null;
-			foreach (AstNode node in elements) {
-				if (isFirst) {
-					isFirst = false;
-				} else {
-					Comma(node, noSpaceAfterComma: true);
-					NewLine();
+			var elementList = elements.ToList();
+			// dnSpy 2.3 (NRefactory CSharpOutputVisitor.PrintInitializerElements):
+			//   wrapAlways = ArrayInitializerWrapping == WrapAlways
+			//                || (count > 1 && any element is not "simple")
+			//                || any element is "complex"
+			//   wrap       = wrapAlways || count > 10
+			//   !wrap -> '{ a, b, c }' on one line; wrap -> brace per policy with a new
+			//   line every 10 elements (after every element when wrapAlways).
+			bool wrapAlways = policy.ArrayInitializerWrapping == Wrapping.WrapAlways
+				|| (elementList.Count > 1 && elementList.Any(e => !IsSimpleInitializerElement(e)))
+				|| elementList.Any(IsComplexInitializerElement);
+			bool wrap = wrapAlways || elementList.Count > 10;
+			if (!wrap) {
+				Space();
+				writer.WriteToken(Roles.LBrace, "{");
+				for (int i = 0; i < elementList.Count; i++) {
+					if (i > 0) {
+						Comma(elementList[i], noSpaceAfterComma: true);
+						Space();
+					}
+					elementList[i].AcceptVisitor(this);
 				}
-				last = node;
-				node.AcceptVisitor(this);
+				if (elementList.Count > 0)
+					OptionalComma(elementList[elementList.Count - 1].NextSibling);
+				Space();
+				writer.WriteToken(Roles.RBrace, "}");
+				return;
 			}
-			if (last != null)
-				OptionalComma(last.NextSibling);
+			OpenBrace(policy.ArrayInitializerBraceStyle);
+			for (int i = 0; i < elementList.Count; i++) {
+				if (i > 0) {
+					Comma(elementList[i], noSpaceAfterComma: true);
+					if (wrapAlways || i % 10 == 0)
+						NewLine();
+					else
+						Space();
+				}
+				elementList[i].AcceptVisitor(this);
+			}
+			if (elementList.Count > 0)
+				OptionalComma(elementList[elementList.Count - 1].NextSibling);
 			NewLine();
-			CloseBrace(style);
+			CloseBrace(policy.ArrayInitializerBraceStyle);
+		}
+
+		/// <summary>Mirror of the 2.3 NRefactory predicates that decide whether an array/collection
+		/// initializer can stay on one line.</summary>
+		static bool IsSimpleInitializerElement(Expression ex)
+		{
+			switch (ex) {
+				case NullReferenceExpression _:
+				case ThisReferenceExpression _:
+				case PrimitiveExpression _:
+				case IdentifierExpression _:
+				case MemberReferenceExpression m when m.Target is ThisReferenceExpression || m.Target is IdentifierExpression || m.Target is BaseReferenceExpression:
+					return true;
+				case MemberReferenceExpression m2 when m2.Target is TypeReferenceExpression:
+					return m2.MemberName == "MinValue" || m2.MemberName == "MaxValue" || m2.MemberName == "NaN"
+						|| m2.MemberName == "PositiveInfinity" || m2.MemberName == "NegativeInfinity" || m2.MemberName == "Epsilon";
+				default:
+					return false;
+			}
+		}
+
+		static bool IsComplexInitializerElement(Expression ex)
+		{
+			switch (ex) {
+				case AnonymousMethodExpression _:
+				case LambdaExpression _:
+				case AnonymousTypeCreateExpression _:
+				case ObjectCreateExpression _:
+				case NamedExpression _:
+					return true;
+				default:
+					return false;
+			}
 		}
 		
 		public virtual void VisitAsExpression(AsExpression asExpression)

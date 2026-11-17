@@ -826,9 +826,11 @@ namespace ICSharpCode.Decompiler
 		public CSharpFormattingOptions CSharpFormattingOptions {
 			get {
 				if (csharpFormattingOptions == null) {
-					csharpFormattingOptions = FormattingOptionsFactory.CreateAllman();
-					csharpFormattingOptions.IndentSwitchBody = false;
-					csharpFormattingOptions.ArrayInitializerWrapping = Wrapping.WrapAlways;
+				csharpFormattingOptions = FormattingOptionsFactory.CreateAllman();
+				csharpFormattingOptions.IndentSwitchBody = false;
+				// dnSpy 2.3 used the default (WrapIfTooLong); forcing WrapAlways here made every
+				// array/collection initializer multi-line (e.g. '[Nullable(new byte[] { 2, 1 })]').
+				csharpFormattingOptions.ArrayInitializerWrapping = Wrapping.WrapIfTooLong;
 				}
 				return csharpFormattingOptions;
 			}
