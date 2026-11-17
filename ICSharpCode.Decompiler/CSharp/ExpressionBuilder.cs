@@ -408,7 +408,9 @@ namespace ICSharpCode.Decompiler.CSharp
 		{
 			Expression expr;
 			IType constantType;
-			if (type.IsReferenceType == true || type.IsKnownType(KnownTypeCode.NullableOfT)) {
+			// dnSpy 2.3 emits 'default(T?)' for Nullable<T> (AstBuilder.MakeDefaultValue returns
+			// DefaultValueExpression); 3.2 collapsed it to 'null'.
+			if (type.IsReferenceType == true) {
 				expr = new NullReferenceExpression();
 				constantType = SpecialType.NullType;
 			} else {
