@@ -19,6 +19,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using ICSharpCode.Decompiler.CSharp.Resolver;
 using ICSharpCode.Decompiler.CSharp.TypeSystem;
@@ -616,10 +617,41 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		/// which is of type <c>int</c>.
 		/// However, the returned expression will always be implicitly convertible to <paramref name="type"/>.
 		/// </summary>
+		/// <summary>CLR type for the integral <see cref="KnownTypeCode"/>s, used to re-type
+		/// constants to the target width (dnSpy 2.3 prints '2147483647L' for an int constant
+		/// converted to long).</summary>
+		static Type GetIntegralClrType(IType type)
+		{
+			switch (type.GetDefinition()?.KnownTypeCode) {
+				case KnownTypeCode.SByte: return typeof(sbyte);
+				case KnownTypeCode.Byte: return typeof(byte);
+				case KnownTypeCode.Int16: return typeof(short);
+				case KnownTypeCode.UInt16: return typeof(ushort);
+				case KnownTypeCode.Int32: return typeof(int);
+				case KnownTypeCode.UInt32: return typeof(uint);
+				case KnownTypeCode.Int64: return typeof(long);
+				case KnownTypeCode.UInt64: return typeof(ulong);
+				default: return null;
+			}
+		}
+
 		public Expression ConvertConstantValue(IType type, object constantValue, bool isAttributeArgument = false)
 		{
 			if (type == null)
 				throw new ArgumentNullException("type");
+			// dnSpy 2.3 re-types a constant to the requested target type, so an int constant
+			// converted to long prints '2147483647L' rather than '2147483647' (and likewise
+			// for the unsigned suffixes). Without this the literal keeps the source width.
+			if (constantValue != null) {
+				var clrType = GetIntegralClrType(type);
+				if (clrType != null && constantValue.GetType() != clrType) {
+					try {
+						constantValue = Convert.ChangeType(constantValue, clrType, CultureInfo.InvariantCulture);
+					} catch (InvalidCastException) {
+					} catch (OverflowException) {
+					}
+				}
+			}
 			if (constantValue == null) {
 				if (type.IsReferenceType == true) {
 					var expr = new NullReferenceExpression();

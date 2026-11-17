@@ -1370,6 +1370,15 @@ namespace ICSharpCode.Decompiler.CSharp
 					// Then, we can just return the argument as-is: the ExpressionBuilder post-condition allows us
 					// to force our parent instruction to handle the actual sign-extension conversion.
 					// (our caller may have more information to pick a better fitting target type)
+					// dnSpy 2.3 types a constant by the wider target type, so 'ldc.i4 0x7FFFFFFF; conv.i8'
+					// prints '2147483647L' rather than '2147483647'.
+					if (arg.ResolveResult is ConstantResolveResult constant
+						&& inst.TargetType.GetSize() > inputType.GetSize()) {
+						var retyped = ConvertConstantValue(
+							new ConstantResolveResult(GetType(inst.TargetType.ToKnownTypeCode()), constant.ConstantValue));
+						return retyped.Expression.WithILInstruction(inst)
+							.WithRR(retyped.ResolveResult);
+					}
 					return arg.WithILInstruction(inst);
 				case ConversionKind.ZeroExtend:
 					// If overflow check cannot fail, handle this just like sign extension (except for swapped signs)
