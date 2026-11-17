@@ -433,9 +433,11 @@ namespace ICSharpCode.Decompiler.CSharp
 					.WithRR(new OperatorResolveResult(boolType, System.Linq.Expressions.ExpressionType.NotEqual,
 					                                  this.ResolveResult, nullRef.ResolveResult));
 			} else {
-				var zero = new PrimitiveExpression(0)
-					.WithoutILInstruction()
-					.WithRR(new ConstantResolveResult(expressionBuilder.compilation.FindType(KnownTypeCode.Int32), 0));
+				// dnSpy 2.3 builds the zero constant with the expression's own type
+				// (AstMethodBodyBuilder.cs:1587-1594), so an enum-typed value becomes
+				// 'EnumType.Member' instead of the raw '0'. Using a hardcoded Int32 here
+				// bypassed ConvertEnumValue entirely.
+				var zero = expressionBuilder.ConvertConstantValue(new ConstantResolveResult(Type, 0));
 				var op = negate ? BinaryOperatorType.Equality : BinaryOperatorType.InEquality;
 				return new BinaryOperatorExpression(Expression, op, zero.Expression)
 					.WithoutILInstruction()
