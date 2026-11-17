@@ -1282,14 +1282,29 @@ namespace ICSharpCode.Decompiler.CSharp
 			var typeSystemAstBuilder = CreateAstBuilder(decompilationContext);
 			if (decompilationContext.CurrentTypeDefinition.Kind == TypeKind.Enum && field.ConstantValue != null) {
 				var enumDec = new EnumMemberDeclaration { Name = field.Name };
+				// dnSpy 2.3 (AstBuilder): a running expected value starts at 0 and is updated to
+				// memberValue + 1 for every member; the initializer is printed only when the value
+				// differs from it (so 'FirstNR = 16384U,' is followed by 'Operator,'), and it is
+				// always printed for [Flags] enums.
 				long initValue = (long)CSharpPrimitiveCast.Cast(TypeCode.Int64, field.ConstantValue, false);
-				enumDec.Initializer = typeSystemAstBuilder.ConvertConstantValue(decompilationContext.CurrentTypeDefinition.EnumUnderlyingType, field.ConstantValue);
-				if (enumDec.Initializer is PrimitiveExpression primitive
-					&& (decompilationContext.CurrentTypeDefinition.Attributes.Any(a => a.AttributeType.FullName == "System.FlagsAttribute")
-						|| (initValue > 9 && ((initValue & (initValue - 1)) == 0 || (initValue & (initValue + 1)) == 0))))
-				{
-					primitive.SetValue(initValue, $"0x{initValue:X}");
+				bool forcePrintingInitializers = decompilationContext.CurrentTypeDefinition
+					.GetAttribute(new TopLevelTypeName("System", "FlagsAttribute")) != null;
+				long expectedEnumMemberValue = 0;
+				var fields = fieldDefinition.DeclaringType?.Fields;
+				int fieldIndex = fields?.IndexOf(fieldDefinition) ?? -1;
+				if (fields != null && fieldIndex > 0) {
+					for (int i = 0; i < fieldIndex; i++) {
+						var previousConstant = fields[i].Constant;
+						if (previousConstant == null)
+							continue;
+						TypeCode previousTypeCode = Type.GetTypeCode(previousConstant.GetType());
+						if (previousTypeCode < TypeCode.Char || previousTypeCode > TypeCode.Decimal)
+							continue;
+						expectedEnumMemberValue = (long)CSharpPrimitiveCast.Cast(TypeCode.Int64, previousConstant, false) + 1;
+					}
 				}
+				if (forcePrintingInitializers || initValue != expectedEnumMemberValue)
+					enumDec.Initializer = typeSystemAstBuilder.ConvertConstantValue(decompilationContext.CurrentTypeDefinition.EnumUnderlyingType, field.ConstantValue);
 				enumDec.Attributes.AddRange(field.Attributes.Select(a => new AttributeSection(typeSystemAstBuilder.ConvertAttribute(a))));
 				enumDec.AddAnnotation(new MemberResolveResult(null, field));
 				return enumDec;
