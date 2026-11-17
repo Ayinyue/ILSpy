@@ -190,12 +190,10 @@ namespace ICSharpCode.Decompiler.CSharp
 							}
 							break;
 						}
-						case InvocationResolveResult invocation: {
-							if (Expression is ObjectCreateExpression oce && oce.Arguments.Count == 1 && invocation.Type.IsKnownType(KnownTypeCode.NullableOfT)) {
-								return this.UnwrapChild(oce.Arguments.Single());
-							}
+						case InvocationResolveResult _:
+							// dnSpy 2.3 keeps the explicit nullable construction 'new T?(x)'
+							// (it has no such unwrapping); 3.2 reduced it to plain 'x'.
 							break;
-						}
 					}
 				}
 				return this;
