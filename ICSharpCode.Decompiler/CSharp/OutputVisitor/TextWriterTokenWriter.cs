@@ -323,8 +323,9 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 //				} else {
 					b.Append(((IFormattable)value).ToString(null, NumberFormatInfo.InvariantInfo));
 //				}
+				// dnSpy 2.3 writes the unsigned suffix in upper case ('0U', 'UL'), not 'u'/'uL'.
 				if (value is uint || value is ulong) {
-					b.Append("u");
+					b.Append("U");
 				}
 				if (value is long || value is ulong) {
 					b.Append("L");
