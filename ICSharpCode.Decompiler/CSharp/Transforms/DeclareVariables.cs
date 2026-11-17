@@ -446,9 +446,8 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 					// Insert a separate declaration statement.
 					Expression initializer = null;
 					AstType type = context.TypeSystemAstBuilder.ConvertType(v.Type);
-					if (v.DefaultInitialization) {
-						initializer = new DefaultValueExpression(type.Clone());
-					}
+					// dnSpy 2.3 does not emit '= default(...)' for these locals (the IL local is
+					// definitely assigned before use), so leave the declaration uninitialised.
 					var vds = new VariableDeclarationStatement(type, v.Name, initializer);
 					vds.Variables.Single().AddAnnotation(new ILVariableResolveResult(ilVariable));
 					Debug.Assert(v.InsertionPoint.nextNode.Role == BlockStatement.StatementRole);
