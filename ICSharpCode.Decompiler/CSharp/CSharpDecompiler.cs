@@ -112,8 +112,13 @@ namespace ICSharpCode.Decompiler.CSharp
 						new LockTransform(),
 						new UsingTransform(),
 						// CachedDelegateInitialization must run after ConditionDetection and before/in LoopingBlockTransform
-						// and must run before NullCoalescingTransform
-						new CachedDelegateInitialization(),
+						// and must run before NullCoalescingTransform.
+						// DISABLED: its CachedDelegateInitializationWithField rewrites
+						// 'if ((d = field) == null) d = (field = new D(M)); ev += d;' into 'ev += new D(M)'.
+						// That drops the compiler-generated delegate cache, so a later '-=' uses a fresh
+						// delegate instance and silently fails to unsubscribe - a correctness bug.
+						// dnSpy 2.3 keeps the cache, so the transform must not run here.
+						//new CachedDelegateInitialization(),
 						// Run the assignment transform both before and after copy propagation.
 						// Before is necessary because inline assignments of constants are otherwise
 						// copy-propated (turned into two separate assignments of the constant).
