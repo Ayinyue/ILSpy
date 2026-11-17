@@ -568,11 +568,21 @@ writer.WriteToken(Roles.RBrace, "}");
 			StartNode(arrayCreateExpression);
 			WriteKeyword(ArrayCreateExpression.NewKeywordRole);
 			arrayCreateExpression.Type.AcceptVisitor(this);
-			if (arrayCreateExpression.Arguments.Count > 0) {
+			// 2.3 omits the length when an initializer is present ("new short[] { ... }").
+			bool omitLength = arrayCreateExpression.Initializer != null &&
+				arrayCreateExpression.Arguments.Count == 1 && arrayCreateExpression.Arguments.First() is PrimitiveExpression;
+			if (arrayCreateExpression.Arguments.Count > 0 && !omitLength) {
 				WriteCommaSeparatedListInBrackets(arrayCreateExpression.Arguments);
 			}
-			foreach (var specifier in arrayCreateExpression.AdditionalArraySpecifiers) {
-				specifier.AcceptVisitor(this);
+			if (omitLength) {
+				WriteToken(Roles.LBracket);
+				for (int i = 1; i < arrayCreateExpression.AdditionalArraySpecifiers.Count; i++)
+					WriteToken(Roles.Comma);
+				WriteToken(Roles.RBracket);
+			} else {
+				foreach (var specifier in arrayCreateExpression.AdditionalArraySpecifiers) {
+					specifier.AcceptVisitor(this);
+				}
 			}
 			arrayCreateExpression.Initializer.AcceptVisitor(this);
 			EndNode(arrayCreateExpression);
