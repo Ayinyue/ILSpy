@@ -243,9 +243,6 @@ namespace ICSharpCode.Decompiler.CSharp
 				if (method.IsAccessor && (method.AccessorOwner.SymbolKind == SymbolKind.Indexer || expectedParameters.Count == allowedParamCount)) {
 					Debug.Assert(argumentToParameterMap == null && argumentNames == null);
 					return HandleAccessorCall(expectedTargetDetails, method, target, arguments.ToList(), argumentNames);
-				} else if (method.Name == "Invoke" && method.DeclaringType.Kind == TypeKind.Delegate && !IsNullConditional(target)) {
-					return new InvocationExpression(target, GetArgumentExpressions(arguments, argumentNames))
-						.WithRR(new CSharpInvocationResolveResult(target.ResolveResult, method, argumentResolveResults, isExpandedForm: isExpandedForm));
 				} else if (IsDelegateEqualityComparison(method, arguments)) {
 					Debug.Assert(argumentToParameterMap == null && argumentNames == null);
 					return HandleDelegateEqualityComparison(method, arguments)
