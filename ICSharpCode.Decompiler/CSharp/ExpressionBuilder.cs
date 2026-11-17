@@ -969,16 +969,55 @@ namespace ICSharpCode.Decompiler.CSharp
 		}
 		
 		/// <summary>
-		/// Re-types a compile-time constant to the operator's result type so the literal
-		/// keeps that type's suffix ('1' -> '1L' when the result is long).
+		/// Re-types only a compile-time constant; non-constants were already aligned by the
+		/// pre-resolution pass, so re-applying the explicit conversion here would stack casts
+		/// like '(int)(int)x'.
 		/// </summary>
-		TranslatedExpression RetypeConstantToResultType(TranslatedExpression expr, IType resultType)
+		TranslatedExpression RetypeConstantOperandToResultType(TranslatedExpression expr, IType resultType)
+		{
+			if (expr.ResolveResult is ConstantResolveResult)
+				return TypeOperandToResultType(expr, resultType);
+			return expr;
+		}
+
+		/// <summary>
+		/// Aligns an operand with the operator's result type. Constants are re-typed so the
+		/// literal keeps that type's suffix ('1' -> '1L' for a long result); other operands
+		/// get an explicit conversion ('(int)d[i]' for a byte element), matching dnSpy 2.3.
+		/// </summary>
+		TranslatedExpression TypeOperandToResultType(TranslatedExpression expr, IType resultType)
 		{
 			var constant = expr.ResolveResult as ConstantResolveResult;
-			if (constant?.ConstantValue == null)
+			if (constant?.ConstantValue != null) {
+				var retyped = ConvertConstantValue(new ConstantResolveResult(resultType, constant.ConstantValue));
+				return retyped.Expression.WithILInstruction(expr.ILInstructions).WithRR(retyped.ResolveResult);
+			}
+			var underlying = NullableType.GetUnderlyingType(expr.Type);
+			var targetUnderlying = NullableType.GetUnderlyingType(resultType);
+			if (GetIntegralSize(underlying) >= GetIntegralSize(targetUnderlying))
 				return expr;
-			var retyped = ConvertConstantValue(new ConstantResolveResult(resultType, constant.ConstantValue));
-			return retyped.Expression.WithILInstruction(expr.ILInstructions).WithRR(retyped.ResolveResult);
+			if (NullableType.IsNullable(expr.Type))
+				return expr.ConvertTo(resultType, this);
+			var cast = new CastExpression(ConvertType(resultType), expr.Expression);
+			return cast.WithILInstruction(expr.ILInstructions).WithRR(expr.ResolveResult);
+		}
+
+		static int GetIntegralSize(IType type)
+		{
+			switch (type.GetDefinition()?.KnownTypeCode) {
+				case KnownTypeCode.SByte:
+				case KnownTypeCode.Byte:
+				case KnownTypeCode.Char: return 1;
+				case KnownTypeCode.Int16:
+				case KnownTypeCode.UInt16: return 2;
+				case KnownTypeCode.Int32:
+				case KnownTypeCode.UInt32:
+				case KnownTypeCode.Single: return 4;
+				case KnownTypeCode.Int64:
+				case KnownTypeCode.UInt64:
+				case KnownTypeCode.Double: return 8;
+				default: return 0;
+			}
 		}
 
 		TranslatedExpression HandleBinaryNumeric(BinaryNumericInstruction inst, BinaryOperatorType op)
@@ -993,6 +1032,15 @@ namespace ICSharpCode.Decompiler.CSharp
 					return ptrResult.Value;
 			}
 
+			// dnSpy 2.3 types operands by the operator's result type ('(int)d[i]' for a byte
+			// element in an int operation, 'index + 1L' for a long index). Resolve the operator
+			// first, while the original operand widths are still visible - PrepareArithmeticArgument
+			// would have widened them implicitly and hidden the difference.
+			var preRr = resolverWithOverflowCheck.ResolveBinaryOperator(op, left.ResolveResult, right.ResolveResult);
+			if (!preRr.IsError) {
+				left = TypeOperandToResultType(left, preRr.Type);
+				right = TypeOperandToResultType(right, preRr.Type);
+			}
 			left = PrepareArithmeticArgument(left, inst.LeftInputType, inst.Sign, inst.IsLifted);
 			right = PrepareArithmeticArgument(right, inst.RightInputType, inst.Sign, inst.IsLifted);
 
@@ -1022,8 +1070,8 @@ namespace ICSharpCode.Decompiler.CSharp
 			// 'long x; x + 1' prints 'x + 1L' rather than 'x + 1' (and 'double * 96'
 			// prints '96.0'). Re-type constants only, leaving other operands alone.
 			if (!rr.IsError) {
-				left = RetypeConstantToResultType(left, rr.Type);
-				right = RetypeConstantToResultType(right, rr.Type);
+				left = RetypeConstantOperandToResultType(left, rr.Type);
+				right = RetypeConstantOperandToResultType(right, rr.Type);
 			}
 			if (rr.IsError || NullableType.GetUnderlyingType(rr.Type).GetStackType() != inst.UnderlyingResultType
 			    || !IsCompatibleWithSign(left.Type, inst.Sign) || !IsCompatibleWithSign(right.Type, inst.Sign))
