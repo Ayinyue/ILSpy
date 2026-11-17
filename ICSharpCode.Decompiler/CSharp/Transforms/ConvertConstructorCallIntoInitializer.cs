@@ -22,7 +22,6 @@ using System.Linq;
 using ICSharpCode.Decompiler.CSharp.Syntax;
 using ICSharpCode.Decompiler.CSharp.Syntax.PatternMatching;
 using ICSharpCode.Decompiler.TypeSystem;
-using Mono.Cecil;
 
 namespace ICSharpCode.Decompiler.CSharp.Transforms
 {
@@ -183,36 +182,35 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 		
 		internal void HandleStaticFieldInitializers(IEnumerable<AstNode> members)
 		{
-			// Translate static constructor into field initializers if the class is BeforeFieldInit
+			// Translate static constructor into field initializers.
+			// The 2.3 engine lifts these assignments without requiring BeforeFieldInit
+			// (verified on dnSpy.Contracts.Debugger: non-BeforeFieldInit types keep their
+			// initializers on the field declarations), so no type-flag gate applies here.
 			var staticCtor = members.OfType<ConstructorDeclaration>().FirstOrDefault(c => (c.Modifiers & Modifiers.Static) == Modifiers.Static);
 			if (staticCtor != null) {
-				IMethod ctorMethod = staticCtor.GetSymbol() as IMethod;
-				MethodDefinition ctorMethodDef = context.TypeSystem.GetCecil(ctorMethod) as MethodDefinition;
-				if (ctorMethodDef != null && ctorMethodDef.DeclaringType.IsBeforeFieldInit) {
-					while (true) {
-						ExpressionStatement es = staticCtor.Body.Statements.FirstOrDefault() as ExpressionStatement;
-						if (es == null)
-							break;
-						AssignmentExpression assignment = es.Expression as AssignmentExpression;
-						if (assignment == null || assignment.Operator != AssignmentOperatorType.Assign)
-							break;
-						IMember fieldOrProperty = (assignment.Left.GetSymbol() as IMember)?.MemberDefinition;
-						if (!(fieldOrProperty is IField || fieldOrProperty is IProperty) || !fieldOrProperty.IsStatic)
-							break;
-						AstNode fieldOrPropertyDecl = members.FirstOrDefault(f => f.GetSymbol() == fieldOrProperty);
-						if (fieldOrPropertyDecl == null)
-							break;
-						if (fieldOrPropertyDecl is FieldDeclaration fd)
-							fd.Variables.Single().Initializer = assignment.Right.Detach();
-						else if (fieldOrPropertyDecl is PropertyDeclaration pd)
-							pd.Initializer = assignment.Right.Detach();
-						else
-							break;
-						es.Remove();
-					}
-					if (staticCtor.Body.Statements.Count == 0)
-						staticCtor.Remove();
+				while (true) {
+					ExpressionStatement es = staticCtor.Body.Statements.FirstOrDefault() as ExpressionStatement;
+					if (es == null)
+						break;
+					AssignmentExpression assignment = es.Expression as AssignmentExpression;
+					if (assignment == null || assignment.Operator != AssignmentOperatorType.Assign)
+						break;
+					IMember fieldOrProperty = (assignment.Left.GetSymbol() as IMember)?.MemberDefinition;
+					if (!(fieldOrProperty is IField || fieldOrProperty is IProperty) || !fieldOrProperty.IsStatic)
+						break;
+					AstNode fieldOrPropertyDecl = members.FirstOrDefault(f => f.GetSymbol() == fieldOrProperty);
+					if (fieldOrPropertyDecl == null)
+						break;
+					if (fieldOrPropertyDecl is FieldDeclaration fd)
+						fd.Variables.Single().Initializer = assignment.Right.Detach();
+					else if (fieldOrPropertyDecl is PropertyDeclaration pd)
+						pd.Initializer = assignment.Right.Detach();
+					else
+						break;
+					es.Remove();
 				}
+				if (staticCtor.Body.Statements.Count == 0)
+					staticCtor.Remove();
 			}
 		}
 	}
