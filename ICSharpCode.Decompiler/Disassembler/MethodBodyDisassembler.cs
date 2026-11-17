@@ -151,7 +151,13 @@ namespace ICSharpCode.Decompiler.Disassembler
 				foreach (var v in body.Variables) {
 					var indexText = localsNumberFormatter != null ? localsNumberFormatter.Format(v.Index) : v.Index.ToString();
 					output.WriteDefinition("[" + indexText + "] ", v);
-					v.VariableType.WriteTo(output);
+					// 2.3 printed the native integer locals with their IL names (.locals only).
+					if (v.VariableType.Namespace == "System" && v.VariableType.Name == "IntPtr")
+						output.Write("native int");
+					else if (v.VariableType.Namespace == "System" && v.VariableType.Name == "UIntPtr")
+						output.Write("native unsigned int");
+					else
+						v.VariableType.WriteTo(output);
 					string localName = localNames != null && v.Index >= 0 && v.Index < localNames.Length ? localNames[v.Index] : null;
 					if (!string.IsNullOrEmpty(localName))
 						output.Write(" " + DisassemblerHelpers.Escape(localName));

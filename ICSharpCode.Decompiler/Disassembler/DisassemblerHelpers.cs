@@ -288,15 +288,6 @@ namespace ICSharpCode.Decompiler.Disassembler
 
 		public static void WriteTo(this TypeReference type, ITextOutput writer, ILNameSyntax syntax = ILNameSyntax.Signature)
 		{
-			// 2.3 (dnlib) printed the native integer types with their IL names.
-			if (type.Namespace == "System" && type.Name == "IntPtr") {
-				writer.Write("native int");
-				return;
-			}
-			if (type.Namespace == "System" && type.Name == "UIntPtr") {
-				writer.Write("native unsigned int");
-				return;
-			}
 			ILNameSyntax syntaxForElementTypes = syntax == ILNameSyntax.SignatureNoNamedTypeParameters ? syntax : ILNameSyntax.Signature;
 			if (type is PinnedType) {
 				((PinnedType)type).ElementType.WriteTo(writer, syntaxForElementTypes);
