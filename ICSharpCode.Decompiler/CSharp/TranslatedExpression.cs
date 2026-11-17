@@ -361,7 +361,10 @@ namespace ICSharpCode.Decompiler.CSharp
 					.WithRR(new ByReferenceResolveResult(elementRR, false));
 			}
 			var rr = expressionBuilder.resolver.WithCheckForOverflow(checkForOverflow).ResolveCast(targetType, ResolveResult);
-			if (rr.IsCompileTimeConstant && !rr.IsError) {
+			// Only literal constants may skip the cast; a cast whose result merely *looks* constant
+			// (e.g. byte -> int, or IntPtr) must be materialised, otherwise '(int)d[i]' loses the
+			// cast that dnSpy 2.3 prints. See audit 8.50.
+			if (rr.IsCompileTimeConstant && !rr.IsError && ResolveResult is ConstantResolveResult) {
 				return expressionBuilder.ConvertConstantValue(rr, allowImplicitConversion)
 					.WithILInstruction(this.ILInstructions);
 			}
