@@ -350,8 +350,11 @@ namespace ICSharpCode.Decompiler.CSharp.OutputVisitor
 		{
 			// assignment is right-associative
 			ParenthesizeIfRequired(assignmentExpression.Left, Assignment + 1);
-			if (InsertParenthesesForReadability) {
-				ParenthesizeIfRequired(assignmentExpression.Right, RelationalAndTypeTesting + 1);
+			// dnSpy 2.3 parenthesizes the RHS at Conditional+1 (and not at all for a
+			// DirectionExpression); 3.2 used RelationalAndTypeTesting+1, which kept a
+			// redundant pair of parentheses around e.g. 'x = (a == b);'.
+			if (InsertParenthesesForReadability && !(assignmentExpression.Right is DirectionExpression)) {
+				ParenthesizeIfRequired(assignmentExpression.Right, Conditional + 1);
 			} else {
 				ParenthesizeIfRequired(assignmentExpression.Right, Assignment);
 			}
