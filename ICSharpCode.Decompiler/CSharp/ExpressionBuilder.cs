@@ -968,6 +968,19 @@ namespace ICSharpCode.Decompiler.CSharp
 			}
 		}
 		
+		/// <summary>
+		/// Re-types a compile-time constant to the operator's result type so the literal
+		/// keeps that type's suffix ('1' -> '1L' when the result is long).
+		/// </summary>
+		TranslatedExpression RetypeConstantToResultType(TranslatedExpression expr, IType resultType)
+		{
+			var constant = expr.ResolveResult as ConstantResolveResult;
+			if (constant?.ConstantValue == null)
+				return expr;
+			var retyped = ConvertConstantValue(new ConstantResolveResult(resultType, constant.ConstantValue));
+			return retyped.Expression.WithILInstruction(expr.ILInstructions).WithRR(retyped.ResolveResult);
+		}
+
 		TranslatedExpression HandleBinaryNumeric(BinaryNumericInstruction inst, BinaryOperatorType op)
 		{
 			var resolverWithOverflowCheck = resolver.WithCheckForOverflow(inst.CheckForOverflow);
@@ -1005,6 +1018,13 @@ namespace ICSharpCode.Decompiler.CSharp
 			}
 
 			var rr = resolverWithOverflowCheck.ResolveBinaryOperator(op, left.ResolveResult, right.ResolveResult);
+			// dnSpy 2.3 types a constant operand by the operator's result type, so
+			// 'long x; x + 1' prints 'x + 1L' rather than 'x + 1' (and 'double * 96'
+			// prints '96.0'). Re-type constants only, leaving other operands alone.
+			if (!rr.IsError) {
+				left = RetypeConstantToResultType(left, rr.Type);
+				right = RetypeConstantToResultType(right, rr.Type);
+			}
 			if (rr.IsError || NullableType.GetUnderlyingType(rr.Type).GetStackType() != inst.UnderlyingResultType
 			    || !IsCompatibleWithSign(left.Type, inst.Sign) || !IsCompatibleWithSign(right.Type, inst.Sign))
 			{
