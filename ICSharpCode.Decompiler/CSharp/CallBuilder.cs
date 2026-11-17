@@ -394,8 +394,10 @@ namespace ICSharpCode.Decompiler.CSharp
 				if (expressionBuilder.HidesVariableWithName(method.Name)) {
 					requireTarget = true;
 				} else {
-					if (method.IsStatic)
-						requireTarget = !expressionBuilder.IsCurrentOrContainingType(method.DeclaringTypeDefinition) || method.Name == ".cctor";
+					if (method.IsStatic) {
+						// dnSpy 2.3 always qualified static method calls with the declaring type name.
+						requireTarget = true;
+					}
 					else if (method.Name == ".ctor")
 						requireTarget = true; // always use target for base/this-ctor-call, the constructor initializer pattern depends on this
 					else if (target.Expression is BaseReferenceExpression)
@@ -713,7 +715,8 @@ namespace ICSharpCode.Decompiler.CSharp
 			if (method.AccessorOwner.SymbolKind == SymbolKind.Indexer || expressionBuilder.HidesVariableWithName(method.AccessorOwner.Name))
 				requireTarget = true;
 			else if (method.IsStatic)
-				requireTarget = !expressionBuilder.IsCurrentOrContainingType(method.DeclaringTypeDefinition);
+				// dnSpy 2.3 always qualified static accessor calls with the declaring type name.
+				requireTarget = true;
 			else
 				// dnSpy 2.3 always qualified instance property/event/indexer accesses with 'this.'.
 				requireTarget = true;
@@ -835,9 +838,7 @@ namespace ICSharpCode.Decompiler.CSharp
 					memberStatic: method.IsStatic,
 					memberDeclaringType: method.DeclaringType);
 				target = ExpressionBuilder.UnwrapBoxingConversion(target);
-				requireTarget = expressionBuilder.HidesVariableWithName(method.Name)
-					// dnSpy 2.3 always qualified instance method groups with 'this.' (new D(this.Method)).
-					|| (method.IsStatic ? !expressionBuilder.IsCurrentOrContainingType(method.DeclaringTypeDefinition) : true);
+				requireTarget = true;
 			}
 			var expectedTargetDetails = new ExpectedTargetDetails {
 				CallOpCode = inst.OpCode

@@ -202,8 +202,10 @@ namespace ICSharpCode.Decompiler.CSharp
 			// Keep that behavior: when the target is 'this', always emit the target; when it is an
 			// implicit 'base' access (TranslateTarget converted ldthis -> base), preserve the existing
 			// unqualified output so base accesses are not affected.
+			// dnSpy 2.3 also qualified static member accesses with the declaring type name, even when
+			// the declaring type is the current (or a containing) type: 'C.f' rather than 'f'.
 			bool requireTarget = HidesVariableWithName(field.Name)
-				|| (field.IsStatic ? !IsCurrentOrContainingType(field.DeclaringTypeDefinition) : !(target.Expression is BaseReferenceExpression));
+				|| (field.IsStatic ? true : !(target.Expression is BaseReferenceExpression));
 			bool targetCasted = false;
 			var targetResolveResult = requireTarget ? target.ResolveResult : null;
 
