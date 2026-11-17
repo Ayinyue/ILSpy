@@ -1821,6 +1821,9 @@ namespace ICSharpCode.Decompiler.CSharp
 		TranslatedExpression TranslateArrayIndex(ILInstruction i)
 		{
 			var input = Translate(i);
+			// dnSpy 2.3 keeps the overflow check of a conv.ovf used as an array index
+			// ('(int)(checked((IntPtr)index))'); dropping it silently changes overflow behaviour.
+			bool checkForOverflow = (i as Conv)?.CheckForOverflow ?? false;
 			KnownTypeCode targetType;
 			if (i.ResultType == StackType.I4) {
 				if (input.Type.IsSmallIntegerType() && input.Type.Kind != TypeKind.Enum) {
@@ -1830,7 +1833,7 @@ namespace ICSharpCode.Decompiler.CSharp
 			} else {
 				targetType = input.Type.GetSign() == Sign.Unsigned ? KnownTypeCode.UInt64 : KnownTypeCode.Int64;
 			}
-			return input.ConvertTo(compilation.FindType(targetType), this);
+			return input.ConvertTo(compilation.FindType(targetType), this, checkForOverflow);
 		}
 		
 		protected internal override TranslatedExpression VisitUnboxAny(UnboxAny inst, TranslationContext context)
