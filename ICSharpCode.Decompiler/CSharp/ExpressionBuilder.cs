@@ -1372,10 +1372,11 @@ namespace ICSharpCode.Decompiler.CSharp
 					// (our caller may have more information to pick a better fitting target type)
 					// dnSpy 2.3 types a constant by the wider target type, so 'ldc.i4 0x7FFFFFFF; conv.i8'
 					// prints '2147483647L' rather than '2147483647'.
-					if (arg.ResolveResult is ConstantResolveResult constant
-						&& inst.TargetType.GetSize() > inputType.GetSize()) {
+					object constantValue2 = (arg.ResolveResult as ConstantResolveResult)?.ConstantValue
+						?? (arg.Expression as PrimitiveExpression)?.Value;
+					if (constantValue2 != null && inst.TargetType.GetSize() > inputType.GetSize()) {
 						var retyped = ConvertConstantValue(
-							new ConstantResolveResult(GetType(inst.TargetType.ToKnownTypeCode()), constant.ConstantValue));
+							new ConstantResolveResult(GetType(inst.TargetType.ToKnownTypeCode()), constantValue2));
 						return retyped.Expression.WithILInstruction(inst)
 							.WithRR(retyped.ResolveResult);
 					}
