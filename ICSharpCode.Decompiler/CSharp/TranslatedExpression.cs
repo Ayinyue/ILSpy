@@ -253,7 +253,10 @@ namespace ICSharpCode.Decompiler.CSharp
 				// Direct cast only works correctly for IntPtr -> long.
 				// IntPtr -> int works correctly only in checked context.
 				// Everything else can be worked around by casting via long.
-				if (!(targetType.IsKnownType(KnownTypeCode.Int64) || checkForOverflow && targetType.IsKnownType(KnownTypeCode.Int32))) {
+				// dnSpy 2.3 casts IntPtr -> int32 directly ('(int)(checked((IntPtr)index))'),
+				// so allow Int32 in both contexts; the unchecked cast truncates exactly like
+				// the via-Int64 detour did.
+				if (!(targetType.IsKnownType(KnownTypeCode.Int64) || targetType.IsKnownType(KnownTypeCode.Int32))) {
 					return this.ConvertTo(compilation.FindType(KnownTypeCode.Int64), expressionBuilder, checkForOverflow)
 						.ConvertTo(targetType, expressionBuilder, checkForOverflow);
 				}
@@ -261,7 +264,7 @@ namespace ICSharpCode.Decompiler.CSharp
 				// Direct cast only works correctly for UIntPtr -> ulong.
 				// UIntPtr -> uint works correctly only in checked context.
 				// Everything else can be worked around by casting via ulong.
-				if (!(targetType.IsKnownType(KnownTypeCode.UInt64) || checkForOverflow && targetType.IsKnownType(KnownTypeCode.UInt32))) {
+				if (!(targetType.IsKnownType(KnownTypeCode.UInt64) || targetType.IsKnownType(KnownTypeCode.UInt32))) {
 					return this.ConvertTo(compilation.FindType(KnownTypeCode.UInt64), expressionBuilder, checkForOverflow)
 						.ConvertTo(targetType, expressionBuilder, checkForOverflow);
 				}
