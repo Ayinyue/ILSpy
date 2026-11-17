@@ -628,13 +628,15 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 				}
 			} else if (type.Kind == TypeKind.Enum) {
 				var enumDefinition = type.GetDefinition();
-				// Match the 2.3 engine: for enum-typed attribute arguments, 2.3 converts through
-				// MakePrimitive(), which expands enum member names only when the enum definition
-				// can be resolved. In the 2.3 harness referenced enums (e.g. AttributeTargets)
-				// do not resolve, so the underlying numeric value is printed instead
-				// (e.g. [AttributeUsage(27524, ...)]); enums defined in the decompiled module
-				// still print their member names. Reproduce that split here.
-				if (isAttributeArgument && enumDefinition != null && enumDefinition.ParentAssembly != null
+				// Match the 2.3 engine: 2.3 converts constants through MakePrimitive(), which
+				// expands enum member names only when the enum definition can be resolved, and
+				// it only resolves enums defined in the decompiled module. Enums coming from a
+				// referenced assembly are printed as their underlying numeric value instead:
+				// decompiling dnSpy.dll, 2.3 prints `new BrushColorInfo(16528, ...)` for
+				// ColorType.SelectedText (ColorType lives in dnSpy.Contracts.DnSpy.dll), while
+				// DbgImageLayout.Unknown keeps its name because that enum is in the module
+				// being decompiled. Apply the same split everywhere, not just to attributes.
+				if (enumDefinition != null && enumDefinition.ParentAssembly != null
 					&& !enumDefinition.ParentAssembly.IsMainAssembly) {
 					var enumValueExpr = new PrimitiveExpression(constantValue);
 					if (AddResolveResultAnnotations)
