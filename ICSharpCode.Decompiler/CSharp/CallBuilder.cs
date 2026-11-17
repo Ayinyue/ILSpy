@@ -427,8 +427,12 @@ namespace ICSharpCode.Decompiler.CSharp
 					}
 					else if (method.Name == ".ctor")
 						requireTarget = true; // always use target for base/this-ctor-call, the constructor initializer pattern depends on this
-					else if (target.Expression is BaseReferenceExpression)
-						requireTarget = (expectedTargetDetails.CallOpCode != OpCode.CallVirt && method.IsVirtual);
+					else if (target.Expression is BaseReferenceExpression) {
+						// dnSpy 2.3 always qualified base-class member accesses with 'base.'
+						// (same NRefactory output-layer rule as 'this.'); 3.2 only kept it for
+						// non-CallVirt virtual calls.
+						requireTarget = true;
+					}
 					else {
 						// dnSpy 2.3 always qualified instance member accesses with 'this.' (NRefactory output layer).
 						// This branch is only reached for non-static, non-base, non-.ctor calls, so forcing the
