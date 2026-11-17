@@ -188,6 +188,10 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					&& (conv.Kind == ConversionKind.Truncate && conv.CheckForOverflow
 						|| conv.Kind == ConversionKind.ZeroExtend || conv.Kind == ConversionKind.SignExtend)
 				) {
+					// dnSpy 2.3 keeps an overflow-checked conversion ('(int)(checked((IntPtr)index))');
+					// stripping it changes overflow behaviour, so leave checked conversions alone.
+					if (conv.CheckForOverflow)
+						continue;
 					context.Step("Remove conv.i from array index", index);
 					index.ReplaceWith(conv.Argument);
 				}

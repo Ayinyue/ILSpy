@@ -1821,19 +1821,19 @@ namespace ICSharpCode.Decompiler.CSharp
 		TranslatedExpression TranslateArrayIndex(ILInstruction i)
 		{
 			var input = Translate(i);
-			// dnSpy 2.3 keeps the overflow check of a conv.ovf used as an array index
-			// ('(int)(checked((IntPtr)index))'); dropping it silently changes overflow behaviour.
-			bool checkForOverflow = (i as Conv)?.CheckForOverflow ?? false;
 			KnownTypeCode targetType;
 			if (i.ResultType == StackType.I4) {
 				if (input.Type.IsSmallIntegerType() && input.Type.Kind != TypeKind.Enum) {
 					return input; // we don't need a cast, just let small integers be promoted to int
 				}
 				targetType = input.Type.GetSign() == Sign.Unsigned ? KnownTypeCode.UInt32 : KnownTypeCode.Int32;
+			} else if (i.ResultType == StackType.I) {
+				// dnSpy 2.3 casts a native-int index to int ('(int)(checked((IntPtr)index))'), not long.
+				targetType = input.Type.GetSign() == Sign.Unsigned ? KnownTypeCode.UInt32 : KnownTypeCode.Int32;
 			} else {
 				targetType = input.Type.GetSign() == Sign.Unsigned ? KnownTypeCode.UInt64 : KnownTypeCode.Int64;
 			}
-			return input.ConvertTo(compilation.FindType(targetType), this, checkForOverflow);
+			return input.ConvertTo(compilation.FindType(targetType), this);
 		}
 		
 		protected internal override TranslatedExpression VisitUnboxAny(UnboxAny inst, TranslationContext context)
