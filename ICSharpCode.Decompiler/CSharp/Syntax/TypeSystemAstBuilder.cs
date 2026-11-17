@@ -857,7 +857,8 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 				throw new ArgumentNullException("parameter");
 			ParameterDeclaration decl = new ParameterDeclaration();
 			if (parameter.IsRef) {
-				decl.ParameterModifier = ParameterModifier.Ref;
+				// dnSpy 2.3 (AstBuilder.cs:2089): by-ref + IsReadOnlyAttribute -> 'in'.
+				decl.ParameterModifier = CallBuilder.IsReadOnlyParameter(parameter) ? ParameterModifier.In : ParameterModifier.Ref;
 			} else if (parameter.IsOut) {
 				decl.ParameterModifier = ParameterModifier.Out;
 			} else if (parameter.IsParams) {

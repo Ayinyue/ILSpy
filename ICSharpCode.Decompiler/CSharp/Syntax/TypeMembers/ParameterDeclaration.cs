@@ -32,7 +32,9 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		Ref,
 		Out,
 		Params,
-		This
+		This,
+		// C# 7.2 'in' parameter. dnSpy 2.3 prints it explicitly.
+		In
 	}
 	
 	public class ParameterDeclaration : AstNode
@@ -42,6 +44,7 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 		public static readonly TokenRole OutModifierRole = new TokenRole("out");
 		public static readonly TokenRole ParamsModifierRole = new TokenRole("params");
 		public static readonly TokenRole ThisModifierRole = new TokenRole("this");
+		public static readonly TokenRole InModifierRole = new TokenRole("in");
 		
 		public override NodeType NodeType {
 			get {

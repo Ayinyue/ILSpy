@@ -799,16 +799,19 @@ writer.WriteToken(Roles.RBrace, "}");
 		{
 			StartNode(directionExpression);
 			
-			switch (directionExpression.FieldDirection) {
-				case FieldDirection.Out:
-					WriteKeyword(DirectionExpression.OutKeywordRole);
-					break;
-				case FieldDirection.Ref:
-					WriteKeyword(DirectionExpression.RefKeywordRole);
-					break;
-				default:
-					throw new NotSupportedException ("Invalid value for FieldDirection");
-			}
+				switch (directionExpression.FieldDirection) {
+					case FieldDirection.Out:
+						WriteKeyword(DirectionExpression.OutKeywordRole);
+						break;
+					case FieldDirection.Ref:
+						WriteKeyword(DirectionExpression.RefKeywordRole);
+						break;
+					case FieldDirection.In:
+						WriteKeyword(DirectionExpression.InKeywordRole);
+						break;
+					default:
+						throw new NotSupportedException ("Invalid value for FieldDirection");
+				}
 			Space();
 			directionExpression.Expression.AcceptVisitor(this);
 			
@@ -2194,6 +2197,9 @@ writer.WriteToken(Roles.RBrace, "}");
 					break;
 				case ParameterModifier.Out:
 					WriteKeyword(ParameterDeclaration.OutModifierRole);
+					break;
+				case ParameterModifier.In:
+					WriteKeyword(ParameterDeclaration.InModifierRole);
 					break;
 				case ParameterModifier.Params:
 					WriteKeyword(ParameterDeclaration.ParamsModifierRole);

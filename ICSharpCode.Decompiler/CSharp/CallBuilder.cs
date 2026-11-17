@@ -78,6 +78,26 @@ namespace ICSharpCode.Decompiler.CSharp
 				.WithILInstruction(inst);
 		}
 
+		/// <summary>
+		/// dnSpy 2.3 prints 'in' for a by-ref parameter carrying
+		/// System.Runtime.CompilerServices.IsReadOnlyAttribute (or InAttribute).
+		/// </summary>
+		internal static bool IsReadOnlyParameter(IParameter parameter)
+		{
+			if (parameter?.Attributes == null)
+				return false;
+			foreach (var attribute in parameter.Attributes) {
+				var type = attribute.AttributeType.GetDefinition();
+				if (type == null)
+					continue;
+				if (type.Name == "InAttribute" && type.Namespace == "System.Runtime.InteropServices")
+					return true;
+				if (type.Name == "IsReadOnlyAttribute" && type.Namespace == "System.Runtime.CompilerServices")
+					return true;
+			}
+			return false;
+		}
+
 		public ExpressionWithResolveResult Build(OpCode callOpCode, IMethod method,
 			IReadOnlyList<ILInstruction> callArguments,
 			IReadOnlyList<int> argumentToParameterMap = null,
@@ -159,6 +179,13 @@ namespace ICSharpCode.Decompiler.CSharp
 
 				if (parameter.IsOut) {
 					arg = ExpressionBuilder.ChangeDirectionExpressionToOut(arg);
+				} else if (parameter.IsRef && IsReadOnlyParameter(parameter)) {
+					// dnSpy 2.3 prints 'in' at the call site for read-only by-ref parameters.
+					if (arg.Expression is DirectionExpression dirExpr && arg.ResolveResult is ByReferenceResolveResult) {
+						dirExpr.FieldDirection = FieldDirection.In;
+					} else {
+						arg = new TranslatedExpression(new DirectionExpression(FieldDirection.In, arg.Expression), arg.ResolveResult);
+					}
 				}
 
 				arguments.Add(arg);
