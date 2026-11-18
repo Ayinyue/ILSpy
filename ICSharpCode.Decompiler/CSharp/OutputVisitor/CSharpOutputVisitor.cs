@@ -645,7 +645,10 @@ writer.WriteToken(Roles.RBrace, "}");
 			bool wrap = wrapAlways || elementList.Count > 10;
 			if (!wrap) {
 				Space();
-				writer.WriteToken(Roles.LBrace, "{");
+				// dnSpy 2.3 (NRefactory) prints '{ 2, 1 }'. Space() right after the brace is
+				// dropped by the token-writer chain (primitives don't consume the pending
+				// space), so the leading space goes into the token text itself.
+				writer.WriteToken(Roles.LBrace, "{ ");
 				for (int i = 0; i < elementList.Count; i++) {
 					if (i > 0) {
 						Comma(elementList[i], noSpaceAfterComma: true);
