@@ -470,6 +470,25 @@ namespace ICSharpCode.Decompiler.CSharp
 		
 		internal ExpressionWithResolveResult LogicNot(TranslatedExpression expr)
 		{
+			// '!(a != null)' is what a negated Nullable<T>.HasValue access looks like once the
+			// accessor is printed as a null comparison; dnSpy 2.3 prints 'a == null' (and the
+			// inverse), so flip the comparison instead of adding a '!'.
+			if (expr.Expression is BinaryOperatorExpression bin
+				&& (bin.Operator == BinaryOperatorType.InEquality || bin.Operator == BinaryOperatorType.Equality)
+				&& bin.Right is NullReferenceExpression)
+			{
+				var flipped = bin.Operator == BinaryOperatorType.InEquality ? BinaryOperatorType.Equality : BinaryOperatorType.InEquality;
+				// Clone: the operands are still parented to 'bin', which stays in use.
+				var copy = (BinaryOperatorExpression)bin.Clone();
+				copy.Operator = flipped;
+				return copy
+					.WithILInstruction(expr.ILInstructions)
+					.WithRR(new OperatorResolveResult(
+						compilation.FindType(KnownTypeCode.Boolean),
+						flipped == BinaryOperatorType.InEquality ? ExpressionType.NotEqual : ExpressionType.Equal,
+						copy.Left.GetResolveResult(),
+						copy.Right.GetResolveResult()));
+			}
 			return new UnaryOperatorExpression(UnaryOperatorType.Not, expr.Expression)
 				.WithRR(new OperatorResolveResult(compilation.FindType(KnownTypeCode.Boolean), ExpressionType.Not, expr.ResolveResult));
 		}

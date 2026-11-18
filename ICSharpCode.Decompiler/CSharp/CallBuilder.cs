@@ -804,6 +804,16 @@ namespace ICSharpCode.Decompiler.CSharp
 					}
 				}
 				return new AssignmentExpression(expr, op, value.Expression).WithRR(new TypeResolveResult(method.AccessorOwner.ReturnType));
+			} else if (IsNullableHasValueGetter(method)) {
+				// dnSpy 2.3 prints a Nullable<T>.HasValue access as 'x != null' (the 2.3 corpus
+				// contains 0 occurrences of '.HasValue'); 3.2 printed 'x.HasValue'.
+				return new BinaryOperatorExpression(target.Expression, BinaryOperatorType.InEquality, new NullReferenceExpression())
+					.WithoutILInstruction()
+					.WithRR(new OperatorResolveResult(
+						expressionBuilder.compilation.FindType(KnownTypeCode.Boolean),
+						System.Linq.Expressions.ExpressionType.NotEqual,
+						target.ResolveResult,
+						new ConstantResolveResult(SpecialType.NullType, null)));
 			} else {
 				if (arguments.Count != 0) {
 					return new IndexerExpression(target.Expression, arguments.Select(a => a.Expression))
@@ -816,6 +826,18 @@ namespace ICSharpCode.Decompiler.CSharp
 						.WithoutILInstruction().WithRR(rr);
 				}
 			}
+		}
+
+		/// <summary>
+		/// Gets whether <paramref name="method"/> is the getter of System.Nullable`1.HasValue.
+		/// </summary>
+		static bool IsNullableHasValueGetter(IMethod method)
+		{
+			IMember owner = method.AccessorOwner;
+			return owner != null
+				&& owner.SymbolKind == SymbolKind.Property
+				&& owner.Name == "HasValue"
+				&& owner.DeclaringType.IsKnownType(KnownTypeCode.NullableOfT);
 		}
 
 		bool IsAppropriateCallTarget(ExpectedTargetDetails expectedTargetDetails, IMember expectedTarget, IMember actualTarget)
