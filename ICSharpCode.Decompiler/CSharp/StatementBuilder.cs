@@ -758,31 +758,50 @@ namespace ICSharpCode.Decompiler.CSharp
 			stmt = null;
 			if (!(ifInst0 is IfInstruction ifInst) || !(ifInst.FalseInst == null || ifInst.FalseInst.MatchNop()))
 				return false;
-			// The trailing 'leave' must be the one that produced 'return false;' - a final
-			// leave is skipped by ConvertBlockContainer and falls out of the block.
-			if (!(nextInst is Leave finalLeave) || !finalLeave.IsLeavingFunction || IsFinalLeave(finalLeave))
-				return false;
-			if (!finalLeave.Value.MatchLdcI4(out var constVal) || (constVal != 0 && constVal != 1))
-				return false;
 			if (!(ifInst.TrueInst is Leave trueLeave) || !trueLeave.IsLeavingFunction || trueLeave.Value.MatchNop())
 				return false;
-			IType targetType = currentFunction.IsAsync ? currentFunction.AsyncReturnType : currentFunction.ReturnType;
-			var trueExpr = exprBuilder.Translate(trueLeave.Value, typeHint: targetType)
-				.ConvertTo(targetType, exprBuilder, allowImplicitConversion: true);
-			if (!trueExpr.Type.IsKnownType(KnownTypeCode.Boolean))
+			// The other branch must be the one that produced the second return; a final leave
+			// is skipped by ConvertBlockContainer and falls out of the block.
+			if (!(nextInst is Leave nextLeave) || !nextLeave.IsLeavingFunction || IsFinalLeave(nextLeave))
 				return false;
+			IType targetType = currentFunction.IsAsync ? currentFunction.AsyncReturnType : currentFunction.ReturnType;
+			TranslatedExpression boolExpr;
+			BinaryOperatorType op;
+			bool negateCond;
+			if (trueLeave.Value.MatchLdcI4(out var trueConst) && trueConst == 0) {
+				// 'if (c) return false; return B;' == 'return !c && B;'
+				// The 'return true' counterpart ('if (c) return true; return B;' == 'c || B')
+				// is deliberately NOT merged: dnSpy 2.3 keeps the if-form there, and merging
+				// it cost +77 diffLines on dnSpy.Contracts.Logic.dll for +3 on DnSpy.
+				var b = exprBuilder.Translate(nextLeave.Value, typeHint: targetType)
+					.ConvertTo(targetType, exprBuilder, allowImplicitConversion: true);
+				if (!b.Type.IsKnownType(KnownTypeCode.Boolean))
+					return false;
+				boolExpr = b;
+				negateCond = true;
+				op = BinaryOperatorType.ConditionalAnd;
+			} else {
+				// 'if (c) return B; return false;' == 'return  c && B;'
+				// 'if (c) return B; return true;'  == 'return !c || B;'
+				if (!nextLeave.Value.MatchLdcI4(out var nextConst) || (nextConst != 0 && nextConst != 1))
+					return false;
+				var b = exprBuilder.Translate(trueLeave.Value, typeHint: targetType)
+					.ConvertTo(targetType, exprBuilder, allowImplicitConversion: true);
+				if (!b.Type.IsKnownType(KnownTypeCode.Boolean))
+					return false;
+				boolExpr = b;
+				negateCond = nextConst == 1;
+				op = nextConst == 0 ? BinaryOperatorType.ConditionalAnd : BinaryOperatorType.ConditionalOr;
+			}
 			var cond = exprBuilder.TranslateCondition(ifInst.Condition);
-			// 'if (c) return B; return false;' == 'return c && B;'
-			// 'if (c) return B; return true;'  == 'return !c || B;'  (dnSpy 2.3 prints '== 0U || ...')
-			var leftExpr = constVal == 0 ? cond : exprBuilder.LogicNot(cond);
-			var op = constVal == 0 ? BinaryOperatorType.ConditionalAnd : BinaryOperatorType.ConditionalOr;
-			var logical = new BinaryOperatorExpression(leftExpr.Expression, op, trueExpr.Expression)
+			var leftExpr = negateCond ? exprBuilder.LogicNot(cond) : cond;
+			var logical = new BinaryOperatorExpression(leftExpr.Expression, op, boolExpr.Expression)
 				.WithILInstruction(ifInst)
 				.WithRR(new OperatorResolveResult(
 					exprBuilder.compilation.FindType(KnownTypeCode.Boolean),
-					constVal == 0 ? System.Linq.Expressions.ExpressionType.AndAlso : System.Linq.Expressions.ExpressionType.OrElse,
+					op == BinaryOperatorType.ConditionalAnd ? System.Linq.Expressions.ExpressionType.AndAlso : System.Linq.Expressions.ExpressionType.OrElse,
 					leftExpr.ResolveResult,
-					trueExpr.ResolveResult));
+					boolExpr.ResolveResult));
 			stmt = new ReturnStatement(logical);
 			return true;
 		}
