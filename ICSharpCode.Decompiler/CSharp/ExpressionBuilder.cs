@@ -478,16 +478,18 @@ namespace ICSharpCode.Decompiler.CSharp
 				&& bin.Right is NullReferenceExpression)
 			{
 				var flipped = bin.Operator == BinaryOperatorType.InEquality ? BinaryOperatorType.Equality : BinaryOperatorType.InEquality;
-				// Clone: the operands are still parented to 'bin', which stays in use.
-				var copy = (BinaryOperatorExpression)bin.Clone();
-				copy.Operator = flipped;
-				return copy
+				// A fresh node, not a clone: AstNode.AddAnnotation() appends rather than
+				// replaces, so re-annotating a clone would leave the old ResolveResult first
+				// in the list and trip TranslatedExpression's
+				// 'Annotation<ResolveResult>() == resolveResult' assertion.
+				var copy = new BinaryOperatorExpression(bin.Left.Clone(), flipped, bin.Right.Clone())
 					.WithILInstruction(expr.ILInstructions)
 					.WithRR(new OperatorResolveResult(
 						compilation.FindType(KnownTypeCode.Boolean),
 						flipped == BinaryOperatorType.InEquality ? ExpressionType.NotEqual : ExpressionType.Equal,
-						copy.Left.GetResolveResult(),
-						copy.Right.GetResolveResult()));
+						bin.Left.GetResolveResult(),
+						bin.Right.GetResolveResult()));
+				return copy;
 			}
 			return new UnaryOperatorExpression(UnaryOperatorType.Not, expr.Expression)
 				.WithRR(new OperatorResolveResult(compilation.FindType(KnownTypeCode.Boolean), ExpressionType.Not, expr.ResolveResult));
