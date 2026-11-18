@@ -762,7 +762,7 @@ namespace ICSharpCode.Decompiler.CSharp
 			// leave is skipped by ConvertBlockContainer and falls out of the block.
 			if (!(nextInst is Leave finalLeave) || !finalLeave.IsLeavingFunction || IsFinalLeave(finalLeave))
 				return false;
-			if (!finalLeave.Value.MatchLdcI4(out var constVal) || constVal != 0)
+			if (!finalLeave.Value.MatchLdcI4(out var constVal) || (constVal != 0 && constVal != 1))
 				return false;
 			if (!(ifInst.TrueInst is Leave trueLeave) || !trueLeave.IsLeavingFunction || trueLeave.Value.MatchNop())
 				return false;
@@ -772,14 +772,18 @@ namespace ICSharpCode.Decompiler.CSharp
 			if (!trueExpr.Type.IsKnownType(KnownTypeCode.Boolean))
 				return false;
 			var cond = exprBuilder.TranslateCondition(ifInst.Condition);
-			var logicalAnd = new BinaryOperatorExpression(cond.Expression, BinaryOperatorType.ConditionalAnd, trueExpr.Expression)
+			// 'if (c) return B; return false;' == 'return c && B;'
+			// 'if (c) return B; return true;'  == 'return !c || B;'  (dnSpy 2.3 prints '== 0U || ...')
+			var leftExpr = constVal == 0 ? cond : exprBuilder.LogicNot(cond);
+			var op = constVal == 0 ? BinaryOperatorType.ConditionalAnd : BinaryOperatorType.ConditionalOr;
+			var logical = new BinaryOperatorExpression(leftExpr.Expression, op, trueExpr.Expression)
 				.WithILInstruction(ifInst)
 				.WithRR(new OperatorResolveResult(
 					exprBuilder.compilation.FindType(KnownTypeCode.Boolean),
-					System.Linq.Expressions.ExpressionType.AndAlso,
-					cond.ResolveResult,
+					constVal == 0 ? System.Linq.Expressions.ExpressionType.AndAlso : System.Linq.Expressions.ExpressionType.OrElse,
+					leftExpr.ResolveResult,
 					trueExpr.ResolveResult));
-			stmt = new ReturnStatement(logicalAnd);
+			stmt = new ReturnStatement(logical);
 			return true;
 		}
 
