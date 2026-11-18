@@ -1142,8 +1142,23 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 			Accessor decl = new Accessor();
 			if (this.ShowAccessibility && accessor.Accessibility != ownerAccessibility)
 				decl.Modifiers = ModifierFromAccessibility(accessor.Accessibility);
+			// dnSpy 2.3 prints 'readonly get;' for an accessor carrying
+			// System.Runtime.CompilerServices.IsReadOnlyAttribute. 3.2 emitted the attribute
+			// itself, which also dragged in a 'using System.Runtime.CompilerServices;'.
+			bool isReadOnly = false;
+			foreach (var attribute in accessor.Attributes) {
+				var attrType = attribute.AttributeType.GetDefinition();
+				if (attrType != null && attrType.Name == "IsReadOnlyAttribute" && attrType.Namespace == "System.Runtime.CompilerServices") {
+					isReadOnly = true;
+					continue;
+				}
+				if (ShowAttributes) {
+					decl.Attributes.Add(new AttributeSection(ConvertAttribute(attribute)));
+				}
+			}
+			if (isReadOnly)
+				decl.AddChild(new CSharpModifierToken(TextLocation.Empty, Modifiers.Readonly), EntityDeclaration.ModifierRole);
 			if (ShowAttributes) {
-				decl.Attributes.AddRange (accessor.Attributes.Select ((a) => new AttributeSection (ConvertAttribute (a))));
 				decl.Attributes.AddRange (accessor.ReturnTypeAttributes.Select ((a) => new AttributeSection (ConvertAttribute (a)) {
 					AttributeTarget = "return"
 				}));

@@ -2304,6 +2304,9 @@ writer.WriteToken(Roles.RBrace, "}");
 					Space();
 					foreach (AstNode node in propertyDeclaration.Children) {
 						if (node.Role == IndexerDeclaration.GetterRole || node.Role == IndexerDeclaration.SetterRole) {
+							// The accessors' modifiers (e.g. 'readonly get;') used to be dropped
+							// here - dnSpy 2.3 prints them.
+							WriteModifiers(((Accessor)node).ModifierTokens);
 							WriteKeyword(node.Role == IndexerDeclaration.GetterRole ? "get" : "set", node.Role);
 							WriteToken(Roles.Semicolon);
 							Space();
