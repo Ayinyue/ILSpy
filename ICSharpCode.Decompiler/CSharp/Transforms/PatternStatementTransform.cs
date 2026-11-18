@@ -727,7 +727,11 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 		static readonly string[] attributeTypesToRemoveFromAutoEvents = new[] {
 			"System.Runtime.CompilerServices.CompilerGeneratedAttribute",
 			"System.Diagnostics.DebuggerBrowsableAttribute",
-			"System.Runtime.CompilerServices.MethodImplAttribute"
+			"System.Runtime.CompilerServices.MethodImplAttribute",
+			// dnSpy 2.3 does not copy NullableAttribute from the add accessor onto the event
+			// (it keeps NullableContextAttribute). The event-level attribute already carries the
+			// same information, so the copy only adds a '[method: Nullable(...)]' line.
+			"System.Runtime.CompilerServices.NullableAttribute"
 		};
 
 		static readonly string[] attributeTypesToRemoveFromAutoProperties = new[] {
