@@ -876,6 +876,13 @@ namespace ICSharpCode.Decompiler.CSharp
 			return SyntaxTreeToString(Decompile(definitions));
 		}
 
+		/// <summary>
+		/// Marks a <see cref="MethodDeclaration"/> synthesized from a .override directive.
+		/// Such a forwarder has no MethodDef of its own; without this marker the binder matches
+		/// it by name to the method it forwards to and prints that method's token twice.
+		/// </summary>
+		public static readonly object SyntheticExplicitImplementationMarker = new object();
+
 		IEnumerable<EntityDeclaration> AddInterfaceImplHelpers(EntityDeclaration memberDecl, MethodDefinition methodDef,
 		                                                       TypeSystemAstBuilder astBuilder)
 		{
@@ -887,6 +894,10 @@ namespace ICSharpCode.Decompiler.CSharp
 				if (m == null || m.DeclaringType.Kind != TypeKind.Interface)
 					continue;
 				var methodDecl = new MethodDeclaration();
+				// The forwarder has no MethodDef of its own; without this marker
+				// AstAnnotationBinder matches it by name to the implemented method and
+				// prints THAT method's token comment (duplicate RID - see audit 8.79).
+				methodDecl.AddAnnotation(SyntheticExplicitImplementationMarker);
 				methodDecl.ReturnType = memberDecl.ReturnType.Clone();
 				methodDecl.PrivateImplementationType = astBuilder.ConvertType(m.DeclaringType);
 				methodDecl.Name = m.Name;
