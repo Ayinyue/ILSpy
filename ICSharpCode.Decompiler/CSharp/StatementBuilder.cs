@@ -746,6 +746,43 @@ namespace ICSharpCode.Decompiler.CSharp
 			return blockStatement;
 		}
 
+		/// <summary>
+		/// Recognises 'if (cond) return B; return false;' at the end of a block and rebuilds it as
+		/// 'return cond &amp;&amp; B;'. The two forms are semantically identical for a pure B, and
+		/// dnSpy 2.3 emits the short-circuit form (its ILAst keeps the '&amp;&amp;' as an
+		/// IfInstruction in expression position, while 3.2 lowers it to a 'leave' in each branch,
+		/// so <c>ExpressionBuilder.VisitIfInstruction</c>'s MatchLogicAnd never fires).
+		/// </summary>
+		bool TryTranslateShortCircuitReturn(ILInstruction ifInst0, ILInstruction nextInst, out Statement stmt)
+		{
+			stmt = null;
+			if (!(ifInst0 is IfInstruction ifInst) || !(ifInst.FalseInst == null || ifInst.FalseInst.MatchNop()))
+				return false;
+			// The trailing 'leave' must be the one that produced 'return false;' - a final
+			// leave is skipped by ConvertBlockContainer and falls out of the block.
+			if (!(nextInst is Leave finalLeave) || !finalLeave.IsLeavingFunction || IsFinalLeave(finalLeave))
+				return false;
+			if (!finalLeave.Value.MatchLdcI4(out var constVal) || constVal != 0)
+				return false;
+			if (!(ifInst.TrueInst is Leave trueLeave) || !trueLeave.IsLeavingFunction || trueLeave.Value.MatchNop())
+				return false;
+			IType targetType = currentFunction.IsAsync ? currentFunction.AsyncReturnType : currentFunction.ReturnType;
+			var trueExpr = exprBuilder.Translate(trueLeave.Value, typeHint: targetType)
+				.ConvertTo(targetType, exprBuilder, allowImplicitConversion: true);
+			if (!trueExpr.Type.IsKnownType(KnownTypeCode.Boolean))
+				return false;
+			var cond = exprBuilder.TranslateCondition(ifInst.Condition);
+			var logicalAnd = new BinaryOperatorExpression(cond.Expression, BinaryOperatorType.ConditionalAnd, trueExpr.Expression)
+				.WithILInstruction(ifInst)
+				.WithRR(new OperatorResolveResult(
+					exprBuilder.compilation.FindType(KnownTypeCode.Boolean),
+					System.Linq.Expressions.ExpressionType.AndAlso,
+					cond.ResolveResult,
+					trueExpr.ResolveResult));
+			stmt = new ReturnStatement(logicalAnd);
+			return true;
+		}
+
 		protected internal override Statement VisitBlockContainer(BlockContainer container)
 		{
 			if (container.Kind != ContainerKind.Normal && container.EntryPoint.IncomingEdgeCount > 1) {
@@ -868,10 +905,20 @@ namespace ICSharpCode.Decompiler.CSharp
 					// If there are any incoming branches to this block, add a label:
 					blockStatement.Add(new LabelStatement { Label = block.Label });
 				}
-				foreach (var inst in block.Instructions) {
+				var instrs = block.Instructions;
+				for (int i = 0; i < instrs.Count; i++) {
+					var inst = instrs[i];
 					if (!isLoop && inst.OpCode == OpCode.Leave && IsFinalLeave((Leave)inst)) {
 						// skip the final 'leave' instruction and just fall out of the BlockStatement
 						continue;
+					}
+					// dnSpy 2.3 prints 'return a && b;' where 3.2 prints
+					// 'if (a) { return b; } return false;'. Both the 'if' and the trailing
+					// 'leave(false)' sit in Instructions (the FinalInstruction is nop).
+					if (!isLoop && i == instrs.Count - 2
+						&& TryTranslateShortCircuitReturn(instrs[i], instrs[i + 1], out var shortCircuit)) {
+						blockStatement.Add(shortCircuit);
+						break;
 					}
 					var stmt = Convert(inst);
 					if (stmt is BlockStatement b) {
