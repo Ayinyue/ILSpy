@@ -783,9 +783,15 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 			RemoveCompilerGeneratedAttribute(ev.AddAccessor.Attributes, attributeTypesToRemoveFromAutoEvents);
 			EventDeclaration ed = new EventDeclaration();
 			ev.Attributes.MoveTo(ed.Attributes);
-			foreach (var attr in ev.AddAccessor.Attributes) {
-				attr.AttributeTarget = "method";
-				ed.Attributes.Add(attr.Detach());
+			if (!ev.Modifiers.HasFlag(Modifiers.Abstract)) {
+				// dnSpy 2.3 only copies the add accessor's attributes (with the 'method:'
+				// target) for concrete field-like events. For abstract events it keeps just
+				// the event-level ones, so copying e.g. NullableContextAttribute there adds a
+				// '[method: NullableContext(2)]' line 2.3 never prints.
+				foreach (var attr in ev.AddAccessor.Attributes) {
+					attr.AttributeTarget = "method";
+					ed.Attributes.Add(attr.Detach());
+				}
 			}
 			ed.ReturnType = ev.ReturnType.Detach();
 			ed.Modifiers = ev.Modifiers;
