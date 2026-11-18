@@ -714,6 +714,11 @@ namespace ICSharpCode.Decompiler.CSharp
 			if (rr != null && !rr.IsError) {
 				IType compUType = NullableType.GetUnderlyingType(rr.Operands[0].Type);
 				if (compUType.GetSign() == inst.Sign && compUType.GetStackType() == inst.InputType) {
+					// The resolved operator fixes the operand types (e.g. 'ulong <= 20' resolves
+					// to the ulong comparison), so a constant literal has to follow them: 2.3
+					// prints '20UL', keeping the IL width printed '20L'.
+					left = RetypeConstantOperandToResultType(left, GetOperandTargetType(rr, 0, compUType));
+					right = RetypeConstantOperandToResultType(right, GetOperandTargetType(rr, 1, compUType));
 					return new BinaryOperatorExpression(left.Expression, op, right.Expression)
 						.WithILInstruction(inst)
 						.WithRR(rr);
@@ -973,11 +978,61 @@ namespace ICSharpCode.Decompiler.CSharp
 		/// pre-resolution pass, so re-applying the explicit conversion here would stack casts
 		/// like '(int)(int)x'.
 		/// </summary>
-		TranslatedExpression RetypeConstantOperandToResultType(TranslatedExpression expr, IType resultType)
+		/// <remarks>
+		/// dnSpy 2.3 types the literal after the type the resolved operator chose for that operand
+		/// position, not after the literal's own IL width. That is observable for unsigned
+		/// operands: in 'ulong n; n &lt;= 20' the resolver picks the <c>ulong</c> comparison, so
+		/// 2.3 prints '20UL'; keeping the IL width (long) printed '20L'.
+		/// </remarks>
+		TranslatedExpression RetypeConstantOperandToResultType(TranslatedExpression expr, IType targetType)
 		{
-			if (expr.ResolveResult is ConstantResolveResult)
-				return TypeOperandToResultType(expr, resultType);
-			return expr;
+			if (!(expr.ResolveResult is ConstantResolveResult))
+				return expr;
+			if (!IsRetypableNumericType(targetType))
+				return expr;
+			// A char literal is deliberate: AdjustConstantExpressionToType() already turned the
+			// numeric IL constant into 'a'. Re-typing it back to a number would undo that.
+			if (expr.Type.IsKnownType(KnownTypeCode.Char))
+				return expr;
+			return TypeOperandToResultType(expr, targetType);
+		}
+
+		/// <summary>
+		/// The type the resolved operator assigned to operand <paramref name="index"/>, falling
+		/// back to the operator's result type when the operator does not expose its operands.
+		/// </summary>
+		static IType GetOperandTargetType(ResolveResult rr, int index, IType resultType)
+		{
+			// A fully constant expression folds to a ConstantResolveResult, which has no
+			// Operands; fall back to the result type in that case.
+			var opRr = rr as OperatorResolveResult;
+			if (opRr?.Operands != null && index < opRr.Operands.Count)
+				return opRr.Operands[index].Type;
+			return resultType;
+		}
+
+		/// <summary>
+		/// Types a constant literal may be re-typed to without changing what the expression means.
+		/// Enums, pointers and reference types are excluded: 2.3 only re-types numeric literals.
+		/// </summary>
+		static bool IsRetypableNumericType(IType type)
+		{
+			switch (NullableType.GetUnderlyingType(type).GetDefinition()?.KnownTypeCode) {
+				case KnownTypeCode.SByte:
+				case KnownTypeCode.Byte:
+				case KnownTypeCode.Int16:
+				case KnownTypeCode.UInt16:
+				case KnownTypeCode.Int32:
+				case KnownTypeCode.UInt32:
+				case KnownTypeCode.Int64:
+				case KnownTypeCode.UInt64:
+				case KnownTypeCode.Single:
+				case KnownTypeCode.Double:
+				case KnownTypeCode.Decimal:
+					return true;
+				default:
+					return false;
+			}
 		}
 
 		/// <summary>
@@ -1066,12 +1121,17 @@ namespace ICSharpCode.Decompiler.CSharp
 			}
 
 			var rr = resolverWithOverflowCheck.ResolveBinaryOperator(op, left.ResolveResult, right.ResolveResult);
-			// dnSpy 2.3 types a constant operand by the operator's result type, so
-			// 'long x; x + 1' prints 'x + 1L' rather than 'x + 1' (and 'double * 96'
-			// prints '96.0'). Re-type constants only, leaving other operands alone.
+			// dnSpy 2.3 types a constant operand after the type the resolved operator assigns to
+			// that operand position, so 'long x; x + 1' prints 'x + 1L' rather than 'x + 1',
+			// 'double * 96' prints '96.0', and 'ulong n; n <= 20' prints '20UL'. Re-type
+			// constants only, leaving other operands alone.
 			if (!rr.IsError) {
-				left = RetypeConstantOperandToResultType(left, rr.Type);
-				right = RetypeConstantOperandToResultType(right, rr.Type);
+				// Capture both operands first: the left re-typing must not influence which type
+				// the right literal is aligned to.
+				var origLeft = left;
+				var origRight = right;
+				left = RetypeConstantOperandToResultType(origLeft, GetOperandTargetType(rr, 0, rr.Type));
+				right = RetypeConstantOperandToResultType(origRight, GetOperandTargetType(rr, 1, rr.Type));
 			}
 			if (rr.IsError || NullableType.GetUnderlyingType(rr.Type).GetStackType() != inst.UnderlyingResultType
 			    || !IsCompatibleWithSign(left.Type, inst.Sign) || !IsCompatibleWithSign(right.Type, inst.Sign))
