@@ -250,9 +250,17 @@ namespace ICSharpCode.Decompiler.CSharp
 			}
 			// Add the IL range associated with this instruction to the current sequence point.
 			if (HasUsableILRange(inst) && current.Intervals != null) {
-				current.Intervals.Add(inst.ILRange);
 				var function = inst.Parent.Ancestors.OfType<ILFunction>().FirstOrDefault();
-				Debug.Assert(current.Function == null || current.Function == function);
+				if (current.Function != null && function != null && function != current.Function) {
+					// The instruction belongs to a different ILFunction than the sequence point
+					// currently being built. This happens when a lambda is lowered into a query
+					// clause (IntroduceQueryExpressions): the clause's expression keeps the
+					// lambda's IL instructions, which are then visited as part of the outer
+					// statement's sequence point. Adding them would silently produce a sequence
+					// point with the wrong IL range, so skip the instruction and its children.
+					return;
+				}
+				current.Intervals.Add(inst.ILRange);
 				current.Function = function;
 			}
 
