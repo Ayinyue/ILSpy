@@ -55,10 +55,13 @@
     <PackageReference Include="Humanizer.Core" Version="2.14.1" />
     <PackageReference Include="System.Collections.Immutable" Version="1.7.1" />
     <PackageReference Include="System.ValueTuple" Version="4.5.0" />
-    <Reference Include="Mono.Cecil">
-      <HintPath>$(MSBuildThisFileDirectory)..\..\..\..\..\..\ILSPY\ILSPY\ICSharpCode.ILSpyCmd\bin\Release\net10.0\Mono.Cecil.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
+		<!-- 原来是硬编码 HintPath，指向仓库外的 ILSPY\ILSPY 克隆；CI 里必然解析不到
+		     （warning MSB3245 + CS0246 'Mono'）。改为引用入库的 lib\Mono.Cecil.dll，
+		     本地与 CI 都不依赖网络。 -->
+		<Reference Include="Mono.Cecil">
+			<HintPath>$(MSBuildThisFileDirectory)lib\Mono.Cecil.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
   </ItemGroup>
 
   <ItemGroup>
