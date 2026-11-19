@@ -43,7 +43,8 @@
     <PackageReference Include="System.Collections.Immutable" Version="1.7.1" />
     <PackageReference Include="NUnit" Version="3.13.1" />
     <Reference Include="Mono.Cecil">
-      <HintPath>$(MSBuildThisFileDirectory)..\..\..\..\..\..\ILSPY\ILSPY\ICSharpCode.ILSpyCmd\bin\Release\net10.0\Mono.Cecil.dll</HintPath>
+      <!-- In-repo copy next to the engine csproj; the external ILSPY\ILSPY clone is not on CI. -->
+      <HintPath>$(MSBuildThisFileDirectory)..\ICSharpCode.Decompiler\lib\Mono.Cecil.dll</HintPath>
     </Reference>
   </ItemGroup>
 
