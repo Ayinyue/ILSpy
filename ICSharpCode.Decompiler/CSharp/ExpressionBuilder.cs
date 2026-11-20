@@ -332,6 +332,14 @@ namespace ICSharpCode.Decompiler.CSharp
 			string literalValue = null;
 			if (ShouldDisplayAsHex(inst.Value, inst.Parent)) {
 				literalValue = $"0x{inst.Value:X}";
+			} else if (inst.Value >= 0 && astBuilder.IsSpecialConstant(compilation.FindType(KnownTypeCode.Int32), inst.Value, out var specialInt32)) {
+				// dnSpy 2.3 rewrites int.MaxValue to the field reference (ILAstOptimizer,
+				// ElementType.I4); TypeSystemAstBuilder already has that value in its
+				// specialConstants table, but ldc.i4 bypassed the lookup (audit 8.96).
+				// Only the non-negative extremes are taken: '(uint)int.MinValue' is a
+				// constant-expression conversion that C# rejects with CS0221, and 3.2 has
+				// no ElementType context to tell the two apart (2.3 does).
+				return ConvertConstantValue(new ConstantResolveResult(compilation.FindType(KnownTypeCode.Int32), inst.Value)).WithILInstruction(inst);
 			}
 			var expr = new PrimitiveExpression(inst.Value, literalValue)
 				.WithILInstruction(inst)
@@ -344,6 +352,12 @@ namespace ICSharpCode.Decompiler.CSharp
 			string literalValue = null;
 			if (ShouldDisplayAsHex(inst.Value, inst.Parent)) {
 				literalValue = $"0x{inst.Value:X}";
+			} else if (inst.Value >= 0 && astBuilder.IsSpecialConstant(compilation.FindType(KnownTypeCode.Int64), inst.Value, out var specialInt64)) {
+				// dnSpy 2.3 rewrites long.MaxValue (ILAstOptimizer, ElementType.I8); see the
+				// VisitLdcI4 note above for why only the non-negative half is taken here.
+				// ulong.MaxValue is ambiguous too (it is -1L on the IL stack) and keeps its
+				// literal; 2.3 only rewrites it with the unsigned element type as context.
+				return ConvertConstantValue(new ConstantResolveResult(compilation.FindType(KnownTypeCode.Int64), inst.Value)).WithILInstruction(inst);
 			}
 			return new PrimitiveExpression(inst.Value, literalValue)
 				.WithILInstruction(inst)

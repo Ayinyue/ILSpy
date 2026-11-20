@@ -698,7 +698,7 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 			}
 		}
 
-		bool IsSpecialConstant(IType type, object constant, out Expression expression)
+		internal bool IsSpecialConstant(IType type, object constant, out Expression expression)
 		{
 			expression = null;
 			if (!specialConstants.TryGetValue(constant, out var info))
