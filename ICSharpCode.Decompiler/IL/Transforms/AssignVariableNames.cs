@@ -154,7 +154,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				}
 			}
 			// Now generate names:
-			var mapping = new Dictionary<ILVariable, string>(ILVariableEqualityComparer.Instance);
+			var mapping = new Dictionary<ILVariable, string>(VariableReferenceEqualityComparer.Instance);
 			foreach (var inst in function.Descendants.OfType<IInstructionWithVariableOperand>()) {
 				var v = inst.Variable;
 				if (!mapping.TryGetValue(v, out string name)) {
@@ -556,6 +556,21 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				return false;
 			proposedName = newName;
 			return true;
+		}		/// <summary>
+		/// SplitVariables gives every split copy the same IL slot index, so the value-based
+		/// ILVariableEqualityComparer collapses two distinct live ranges onto one name
+		/// (2.3 keeps the debug name: 'sum'; 3.2 turned it into 'sum2'). Reference equality
+		/// keeps the names produced by the first pass.
+		/// </summary>
+		sealed class VariableReferenceEqualityComparer : IEqualityComparer<ILVariable>
+		{
+			public static readonly VariableReferenceEqualityComparer Instance = new VariableReferenceEqualityComparer();
+
+			public bool Equals(ILVariable x, ILVariable y) => ReferenceEquals(x, y);
+
+			public int GetHashCode(ILVariable obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
 		}
+
+
 	}
 }

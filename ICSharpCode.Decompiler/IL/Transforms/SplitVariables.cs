@@ -87,10 +87,27 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 								return true;
 						}
 					}
-					return false;
+					return IsUsedAsThisPointerInCall(addressLoadingInstruction);
+				case CallVirt callVirt:
+					return IsUsedAsThisPointerInCall(addressLoadingInstruction);
 				default:
 					return false;
 			}
+		}
+
+		/// <summary>
+		/// Is the address-loading instruction the 'this' pointer of an instance call on a
+		/// value type? 2.3's ILAstBuilder.ConvertLocalVariables splits a local whenever every
+		/// ldloca use is consumed by a single instance call (IsDeterministicLdloca); that split
+		/// is what lets ILInlining inline the Roslyn spill
+		/// 'stloc V(X.Prop); ldloca V; call get_M()' back into 'X.Prop.M' (audit 8.68).
+		/// SplitVariables only allowed reads here, so the split never happened and the spill
+		/// survived as a named local (ILSpan iLSpan).
+		/// </summary>
+		static bool IsUsedAsThisPointerInCall(ILInstruction addressLoadingInstruction)
+		{
+			return addressLoadingInstruction is LdLoca ldloca
+				&& ILInlining.IsUsedAsThisPointerInCall(ldloca);
 		}
 
 		/// <summary>
