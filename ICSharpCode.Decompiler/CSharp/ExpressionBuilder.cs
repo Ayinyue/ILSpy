@@ -468,28 +468,65 @@ namespace ICSharpCode.Decompiler.CSharp
 				.WithILInstruction(inst);
 		}
 		
+		/// <summary>
+		/// Gets the comparison operator that is the exact negation of the given one, or
+		/// <see cref="BinaryOperatorType.Any"/> if the operator is not a comparison.
+		/// Mirrors dnSpy 2.3's ILAst <c>PeepholeTransform.SimplifyLogicNotArgument</c>,
+		/// which pushes <c>logicnot</c> through <c>Ceq</c>/<c>Cne</c>/<c>Cgt</c>/<c>Cge</c>/
+		/// <c>Clt</c>/<c>Cle</c> (and the <c>_Un</c> variants) instead of emitting a '!'
+		/// (audit 8.94).
+		/// </summary>
+		static BinaryOperatorType GetNegatedComparison(BinaryOperatorType op)
+		{
+			switch (op) {
+				case BinaryOperatorType.Equality: return BinaryOperatorType.InEquality;
+				case BinaryOperatorType.InEquality: return BinaryOperatorType.Equality;
+				case BinaryOperatorType.GreaterThan: return BinaryOperatorType.LessThanOrEqual;
+				case BinaryOperatorType.GreaterThanOrEqual: return BinaryOperatorType.LessThan;
+				case BinaryOperatorType.LessThan: return BinaryOperatorType.GreaterThanOrEqual;
+				case BinaryOperatorType.LessThanOrEqual: return BinaryOperatorType.GreaterThan;
+				default: return BinaryOperatorType.Any;
+			}
+		}
+
+		static bool IsFloatingPoint(IType type)
+		{
+			type = NullableType.GetUnderlyingType(type);
+			return type.IsKnownType(KnownTypeCode.Single) || type.IsKnownType(KnownTypeCode.Double);
+		}
+
 		internal ExpressionWithResolveResult LogicNot(TranslatedExpression expr)
 		{
-			// '!(a != null)' is what a negated Nullable<T>.HasValue access looks like once the
-			// accessor is printed as a null comparison; dnSpy 2.3 prints 'a == null' (and the
-			// inverse), so flip the comparison instead of adding a '!'.
-			if (expr.Expression is BinaryOperatorExpression bin
-				&& (bin.Operator == BinaryOperatorType.InEquality || bin.Operator == BinaryOperatorType.Equality)
-				&& bin.Right is NullReferenceExpression)
-			{
-				var flipped = bin.Operator == BinaryOperatorType.InEquality ? BinaryOperatorType.Equality : BinaryOperatorType.InEquality;
-				// A fresh node, not a clone: AstNode.AddAnnotation() appends rather than
-				// replaces, so re-annotating a clone would leave the old ResolveResult first
-				// in the list and trip TranslatedExpression's
-				// 'Annotation<ResolveResult>() == resolveResult' assertion.
-				var copy = new BinaryOperatorExpression(bin.Left.Clone(), flipped, bin.Right.Clone())
-					.WithILInstruction(expr.ILInstructions)
-					.WithRR(new OperatorResolveResult(
-						compilation.FindType(KnownTypeCode.Boolean),
-						flipped == BinaryOperatorType.InEquality ? ExpressionType.NotEqual : ExpressionType.Equal,
-						bin.Left.GetResolveResult(),
-						bin.Right.GetResolveResult()));
-				return copy;
+			if (expr.Expression is BinaryOperatorExpression bin) {
+				var flipped = GetNegatedComparison(bin.Operator);
+				if (flipped != BinaryOperatorType.Any) {
+					// '!(a > b)' is only 'a <= b' when NaN cannot occur; C# defines '!='
+					// as the negation of '==' for floating point, so equality is always safe.
+					// Lifted comparisons are three-valued, so '!(a == b)' is not 'a != b'
+					// when either operand may be null.
+					var orr = expr.ResolveResult as OperatorResolveResult;
+					var isLifted = orr != null && orr.IsLiftedOperator;
+					var relationalWithNaN = flipped == BinaryOperatorType.LessThanOrEqual
+						|| flipped == BinaryOperatorType.LessThan
+						|| flipped == BinaryOperatorType.GreaterThan
+						|| flipped == BinaryOperatorType.GreaterThanOrEqual;
+					var hitsNaN = relationalWithNaN && orr != null && orr.Operands != null && orr.Operands.Count == 2
+						&& (IsFloatingPoint(orr.Operands[0].Type) || IsFloatingPoint(orr.Operands[1].Type));
+					if (!isLifted && !hitsNaN) {
+						// A fresh node, not a clone: AstNode.AddAnnotation() appends rather than
+						// replaces, so re-annotating a clone would leave the old ResolveResult first
+						// in the list and trip TranslatedExpression's
+						// 'Annotation<ResolveResult>() == resolveResult' assertion.
+						var copy = new BinaryOperatorExpression(bin.Left.Clone(), flipped, bin.Right.Clone())
+							.WithILInstruction(expr.ILInstructions)
+							.WithRR(new OperatorResolveResult(
+								compilation.FindType(KnownTypeCode.Boolean),
+								BinaryOperatorExpression.GetLinqNodeType(flipped, false),
+								bin.Left.GetResolveResult(),
+								bin.Right.GetResolveResult()));
+						return copy;
+					}
+				}
 			}
 			return new UnaryOperatorExpression(UnaryOperatorType.Not, expr.Expression)
 				.WithRR(new OperatorResolveResult(compilation.FindType(KnownTypeCode.Boolean), ExpressionType.Not, expr.ResolveResult));
