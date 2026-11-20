@@ -327,12 +327,32 @@ namespace ICSharpCode.Decompiler.CSharp
 			}.WithILInstruction(inst).WithRR(new ResolveResult(new PointerType(elementType)));
 		}
 		
+		/// <summary>
+		/// Negative MinValue constants may only be printed as a field reference when the expected
+		/// type is known to be signed: '(uint)int.MinValue' is a constant-expression conversion
+		/// that C# rejects with CS0221. 2.3 can always tell, because its ILAst type inference
+		/// knows the ElementType; 3.2 only has TranslationContext.TypeHint (set when the constant
+		/// is a call argument, unknown inside comparisons) - audit 8.96.
+		/// </summary>
+		static bool IsSafeExtreme(IType typeHint, long value)
+		{
+			if (value >= 0)
+				return true;
+			if (typeHint == null)
+				return false;
+			var underlying = NullableType.GetUnderlyingType(typeHint);
+			return underlying.IsKnownType(KnownTypeCode.Int64)
+				|| underlying.IsKnownType(KnownTypeCode.Int32)
+				|| underlying.IsKnownType(KnownTypeCode.Int16)
+				|| underlying.IsKnownType(KnownTypeCode.SByte);
+		}
+
 		protected internal override TranslatedExpression VisitLdcI4(LdcI4 inst, TranslationContext context)
 		{
 			string literalValue = null;
 			if (ShouldDisplayAsHex(inst.Value, inst.Parent)) {
 				literalValue = $"0x{inst.Value:X}";
-			} else if (inst.Value >= 0 && astBuilder.IsSpecialConstant(compilation.FindType(KnownTypeCode.Int32), inst.Value, out var specialInt32)) {
+			} else if (IsSafeExtreme(context.TypeHint, inst.Value) && astBuilder.IsSpecialConstant(compilation.FindType(KnownTypeCode.Int32), inst.Value, out var specialInt32)) {
 				// dnSpy 2.3 rewrites int.MaxValue to the field reference (ILAstOptimizer,
 				// ElementType.I4); TypeSystemAstBuilder already has that value in its
 				// specialConstants table, but ldc.i4 bypassed the lookup (audit 8.96).
@@ -352,7 +372,7 @@ namespace ICSharpCode.Decompiler.CSharp
 			string literalValue = null;
 			if (ShouldDisplayAsHex(inst.Value, inst.Parent)) {
 				literalValue = $"0x{inst.Value:X}";
-			} else if (inst.Value >= 0 && astBuilder.IsSpecialConstant(compilation.FindType(KnownTypeCode.Int64), inst.Value, out var specialInt64)) {
+			} else if (IsSafeExtreme(context.TypeHint, inst.Value) && astBuilder.IsSpecialConstant(compilation.FindType(KnownTypeCode.Int64), inst.Value, out var specialInt64)) {
 				// dnSpy 2.3 rewrites long.MaxValue (ILAstOptimizer, ElementType.I8); see the
 				// VisitLdcI4 note above for why only the non-negative half is taken here.
 				// ulong.MaxValue is ambiguous too (it is -1L on the IL stack) and keeps its
