@@ -1068,32 +1068,12 @@ namespace ICSharpCode.Decompiler.CSharp
 				var retyped = ConvertConstantValue(new ConstantResolveResult(resultType, constant.ConstantValue));
 				return retyped.Expression.WithILInstruction(expr.ILInstructions).WithRR(retyped.ResolveResult);
 			}
-			var underlying = NullableType.GetUnderlyingType(expr.Type);
-			var targetUnderlying = NullableType.GetUnderlyingType(resultType);
-			if (GetIntegralSize(underlying) >= GetIntegralSize(targetUnderlying))
-				return expr;
-			if (NullableType.IsNullable(expr.Type))
-				return expr.ConvertTo(resultType, this);
-			var cast = new CastExpression(ConvertType(resultType), expr.Expression);
-			return cast.WithILInstruction(expr.ILInstructions).WithRR(expr.ResolveResult);
-		}
-
-		static int GetIntegralSize(IType type)
-		{
-			switch (type.GetDefinition()?.KnownTypeCode) {
-				case KnownTypeCode.SByte:
-				case KnownTypeCode.Byte:
-				case KnownTypeCode.Char: return 1;
-				case KnownTypeCode.Int16:
-				case KnownTypeCode.UInt16: return 2;
-				case KnownTypeCode.Int32:
-				case KnownTypeCode.UInt32:
-				case KnownTypeCode.Single: return 4;
-				case KnownTypeCode.Int64:
-				case KnownTypeCode.UInt64:
-				case KnownTypeCode.Double: return 8;
-				default: return 0;
-			}
+			// Non-constant operands keep their own type. C# promotes them implicitly in a
+			// numeric binary operation, so an explicit cast here is pure noise: the source
+			// says 'd[i] | (d[j] << 8)' (HexBytes.cs:171) and 2.3 prints
+			// '(int)d[i] | ((int)d[j] << 8)' - more casts than the source, see audit 8.44.
+			// Only constants are re-typed (above), so 'index + 1L' keeps its suffix.
+			return expr;
 		}
 
 		TranslatedExpression HandleBinaryNumeric(BinaryNumericInstruction inst, BinaryOperatorType op)
