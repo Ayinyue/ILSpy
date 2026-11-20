@@ -886,26 +886,26 @@ namespace ICSharpCode.Decompiler.CSharp
 		{
 			switch (inst.Operator) {
 				case BinaryNumericOperator.Add:
-					return HandleBinaryNumeric(inst, BinaryOperatorType.Add);
+					return HandleBinaryNumeric(inst, BinaryOperatorType.Add, context);
 				case BinaryNumericOperator.Sub:
-					return HandleBinaryNumeric(inst, BinaryOperatorType.Subtract);
+					return HandleBinaryNumeric(inst, BinaryOperatorType.Subtract, context);
 				case BinaryNumericOperator.Mul:
-					return HandleBinaryNumeric(inst, BinaryOperatorType.Multiply);
+					return HandleBinaryNumeric(inst, BinaryOperatorType.Multiply, context);
 				case BinaryNumericOperator.Div:
 					return HandlePointerSubtraction(inst)
-						?? HandleBinaryNumeric(inst, BinaryOperatorType.Divide);
+						?? HandleBinaryNumeric(inst, BinaryOperatorType.Divide, context);
 				case BinaryNumericOperator.Rem:
-					return HandleBinaryNumeric(inst, BinaryOperatorType.Modulus);
+					return HandleBinaryNumeric(inst, BinaryOperatorType.Modulus, context);
 				case BinaryNumericOperator.BitAnd:
-					return HandleBinaryNumeric(inst, BinaryOperatorType.BitwiseAnd);
+					return HandleBinaryNumeric(inst, BinaryOperatorType.BitwiseAnd, context);
 				case BinaryNumericOperator.BitOr:
-					return HandleBinaryNumeric(inst, BinaryOperatorType.BitwiseOr);
+					return HandleBinaryNumeric(inst, BinaryOperatorType.BitwiseOr, context);
 				case BinaryNumericOperator.BitXor:
-					return HandleBinaryNumeric(inst, BinaryOperatorType.ExclusiveOr);
+					return HandleBinaryNumeric(inst, BinaryOperatorType.ExclusiveOr, context);
 				case BinaryNumericOperator.ShiftLeft:
-					return HandleShift(inst, BinaryOperatorType.ShiftLeft);
+					return HandleShift(inst, BinaryOperatorType.ShiftLeft, context);
 				case BinaryNumericOperator.ShiftRight:
-					return HandleShift(inst, BinaryOperatorType.ShiftRight);
+					return HandleShift(inst, BinaryOperatorType.ShiftRight, context);
 				default:
 					throw new ArgumentOutOfRangeException();
 			}
@@ -1147,11 +1147,11 @@ namespace ICSharpCode.Decompiler.CSharp
 			return expr;
 		}
 
-		TranslatedExpression HandleBinaryNumeric(BinaryNumericInstruction inst, BinaryOperatorType op)
+		TranslatedExpression HandleBinaryNumeric(BinaryNumericInstruction inst, BinaryOperatorType op, TranslationContext context)
 		{
 			var resolverWithOverflowCheck = resolver.WithCheckForOverflow(inst.CheckForOverflow);
-			var left = Translate(inst.Left);
-			var right = Translate(inst.Right);
+			var left = Translate(inst.Left, typeHint: context.TypeHint);
+			var right = Translate(inst.Right, typeHint: context.TypeHint);
 
 			if (left.Type.Kind == TypeKind.Pointer || right.Type.Kind == TypeKind.Pointer) {
 				var ptrResult = HandlePointerArithmetic(inst, left, right);
@@ -1276,7 +1276,7 @@ namespace ICSharpCode.Decompiler.CSharp
 			}
 		}
 
-		TranslatedExpression HandleShift(BinaryNumericInstruction inst, BinaryOperatorType op)
+		TranslatedExpression HandleShift(BinaryNumericInstruction inst, BinaryOperatorType op, TranslationContext context)
 		{
 			var left = Translate(inst.Left);
 			var right = Translate(inst.Right);
@@ -1297,6 +1297,14 @@ namespace ICSharpCode.Decompiler.CSharp
 					targetType = compilation.FindType(sign == Sign.Unsigned ? KnownTypeCode.UInt32 : KnownTypeCode.Int32);
 				} else {
 					targetType = compilation.FindType(sign == Sign.Unsigned ? KnownTypeCode.UInt64 : KnownTypeCode.Int64);
+				}
+				var hintType = NullableType.GetUnderlyingType(context.TypeHint);
+				if (hintType != null
+					&& hintType.GetStackType() == inst.UnderlyingResultType
+					&& !hintType.IsCSharpSmallIntegerType()
+					&& (hintType.IsKnownType(KnownTypeCode.Int32) || hintType.IsKnownType(KnownTypeCode.UInt32)
+						|| hintType.IsKnownType(KnownTypeCode.Int64) || hintType.IsKnownType(KnownTypeCode.UInt64))) {
+					targetType = hintType;
 				}
 				if (NullableType.IsNullable(left.Type)) {
 					targetType = NullableType.Create(compilation, targetType);
