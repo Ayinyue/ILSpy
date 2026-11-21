@@ -653,7 +653,9 @@ namespace ICSharpCode.Decompiler.CSharp.Syntax
 				}
 			}
 			if (constantValue == null) {
-				if (type.IsReferenceType == true) {
+				// Nullable<T> defaults to null too; 2.3 prints '= null' and so does the source
+				// (audit 8.42/8.101).
+				if (type.IsReferenceType == true || type.GetDefinition()?.KnownTypeCode == KnownTypeCode.NullableOfT) {
 					var expr = new NullReferenceExpression();
 					if (AddResolveResultAnnotations)
 						expr.AddAnnotation(new ConstantResolveResult(SpecialType.NullType, null));
