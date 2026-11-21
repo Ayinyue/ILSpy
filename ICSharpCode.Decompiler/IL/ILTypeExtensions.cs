@@ -141,6 +141,12 @@ namespace ICSharpCode.Decompiler.IL
 		public static IType InferType(this ILInstruction inst)
 		{
 			switch (inst) {
+				case CastClass castClass:
+					// a castclass T leaves a T on the stack; without this the stack-slot name
+					// inference in AssignVariableNames falls back to the declared type (object).
+					return castClass.Type;
+				case IsInst isInst:
+					return isInst.Type;
 				case NewObj newObj:
 					return newObj.Method.DeclaringType;
 				case Call call:
