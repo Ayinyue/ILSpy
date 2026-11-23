@@ -155,6 +155,7 @@ namespace ICSharpCode.Decompiler.CSharp
 
 		List<IAstTransform> astTransforms = new List<IAstTransform> {
 			new PatternStatementTransform(),
+			new ReconstructBooleanDisjunctionTransform(),
 			new ReplaceMethodCallsWithOperators(), // must run before DeclareVariables.EnsureExpressionStatementsAreValid
 			new IntroduceUnsafeModifier(),
 			new AddCheckedBlocks(),
