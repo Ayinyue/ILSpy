@@ -294,8 +294,13 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 				}
 				ControlFlowNode exitPoint = null;
 				int exitPointILOffset = -1;
+				// If the loop head itself falls through into a function-level return, the loop's
+				// real exit is that return. Return-only blocks must not be mistaken for a break
+				// target, otherwise the exit is placed after the loop and the loop condition is
+				// lost (the loop decompiles as 'while (true)' plus an early return).
+				bool headFallsThroughToReturn = ((Block)loopHead.UserData).Instructions.LastOrDefault() is Leave headLeave && headLeave.IsLeavingFunction;
 				foreach (var node in loopHead.DominatorTreeChildren) {
-					PickExitPoint(node, ref exitPoint, ref exitPointILOffset);
+					PickExitPoint(node, ref exitPoint, ref exitPointILOffset, headFallsThroughToReturn);
 				}
 				return exitPoint;
 			} else {
@@ -384,6 +389,15 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 		}
 
 		/// <summary>
+		/// A block whose last instruction leaves the function is a return path, not a
+		/// potential loop exit: control cannot "break" to it, it can only return.
+		/// </summary>
+		static bool IsFunctionReturnBlock(Block block)
+		{
+			return block.Instructions.LastOrDefault() is Leave leave && leave.IsLeavingFunction;
+		}
+
+		/// <summary>
 		/// Pick exit point by picking any node that has no reachable exits.
 		/// 
 		/// In the common case where the code was compiled with a compiler that emits IL code
@@ -393,12 +407,13 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 		/// </summary>
 		/// <returns>Code amount in <paramref name="node"/> and its dominated nodes.</returns>
 		/// <remarks>This method must not write to the Visited flags on the CFG.</remarks>
-		void PickExitPoint(ControlFlowNode node, ref ControlFlowNode exitPoint, ref int exitPointILOffset)
+		void PickExitPoint(ControlFlowNode node, ref ControlFlowNode exitPoint, ref int exitPointILOffset, bool skipReturnBlocks = false)
 		{
 			Block block = (Block)node.UserData;
 			if (block.ILRange.Start > exitPointILOffset
 				&& !context.ControlFlowGraph.HasReachableExit(node)
-				&& ((Block)node.UserData).Parent == currentBlockContainer)
+				&& ((Block)node.UserData).Parent == currentBlockContainer
+				&& !(skipReturnBlocks && IsFunctionReturnBlock(block)))
 			{
 				// HasReachableExit(node) == false
 				// -> there are no nodes n so that `node` dominates a predecessor of n but not n itself
@@ -416,7 +431,7 @@ namespace ICSharpCode.Decompiler.IL.ControlFlow
 				// moving almost all of the code into the loop.
 			}
 			foreach (var child in node.DominatorTreeChildren) {
-				PickExitPoint(child, ref exitPoint, ref exitPointILOffset);
+				PickExitPoint(child, ref exitPoint, ref exitPointILOffset, skipReturnBlocks);
 			}
 		}
 
