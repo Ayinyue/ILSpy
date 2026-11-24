@@ -293,8 +293,21 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				base.VisitLdObj(inst);
 				if (!inst.Target.MatchLdFlda(out ILInstruction target, out IField field))
 					return;
-				if (!initValues.TryGetValue((IField)field.MemberDefinition, out DisplayClassVariable info))
+				var fieldDefinition = (IField)field.MemberDefinition;
+				if (!initValues.TryGetValue(fieldDefinition, out DisplayClassVariable info)) {
+					// Read-before-init: the caching store (if any) appears later in the instruction stream,
+					// so nothing was registered yet. Mirror VisitLdFlda and introduce a fresh local,
+					// otherwise the eliminated container leaks into the output as an uninitialized local.
+					if (!MatchesTargetOrCopyLoad(target))
+						return;
+					if (!translatedDisplayClasses.Contains(fieldDefinition.DeclaringTypeDefinition))
+						return;
+					var v = currentFunction.RegisterVariable(VariableKind.Local, field.Type, field.Name);
+					v.CaptureScope = captureScope;
+					inst.ReplaceWith(new LdLoc(v));
+					initValues.Add(fieldDefinition, new DisplayClassVariable { value = new LdLoc(v), variable = v });
 					return;
+				}
 				inst.ReplaceWith(info.value.Clone());
 			}
 			
