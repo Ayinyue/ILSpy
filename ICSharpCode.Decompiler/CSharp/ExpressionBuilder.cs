@@ -1128,9 +1128,9 @@ namespace ICSharpCode.Decompiler.CSharp
 		}
 
 		/// <summary>
-		/// Aligns an operand with the operator's result type. Constants are re-typed so the
-		/// literal keeps that type's suffix ('1' -> '1L' for a long result); other operands
-		/// get an explicit conversion ('(int)d[i]' for a byte element), matching dnSpy 2.3.
+		/// Aligns an operand with the operator's result type. Constants are re-typed so
+		/// the literal keeps that type's suffix ('1' -> '1L' for a long result); every other
+		/// operand keeps its own type and promotes implicitly, matching dnSpy 2.3.
 		/// </summary>
 		TranslatedExpression TypeOperandToResultType(TranslatedExpression expr, IType resultType)
 		{

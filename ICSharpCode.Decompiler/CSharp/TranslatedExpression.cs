@@ -360,6 +360,13 @@ namespace ICSharpCode.Decompiler.CSharp
 					.WithoutILInstruction()
 					.WithRR(new ByReferenceResolveResult(elementRR, false));
 			}
+			// dnSpy 2.3 does not materialise an explicit conversion for a numeric literal when
+			// an implicit user-defined conversion exists: 'span.Length != 16' stays as-is instead of
+			// becoming '(HexPosition)16'. Only literals take this path; non-constant operands keep
+			// the explicit conversion (audit 8.x).
+			var implicitUserDefined = conversions.ImplicitConversion(ResolveResult, targetType);
+			if (ResolveResult is ConstantResolveResult && implicitUserDefined.IsValid && implicitUserDefined.IsUserDefined)
+				return this;
 			var rr = expressionBuilder.resolver.WithCheckForOverflow(checkForOverflow).ResolveCast(targetType, ResolveResult);
 			// Only literal constants may skip the cast; a cast whose result merely *looks* constant
 			// (e.g. byte -> int, or IntPtr) must be materialised, otherwise '(int)d[i]' loses the
