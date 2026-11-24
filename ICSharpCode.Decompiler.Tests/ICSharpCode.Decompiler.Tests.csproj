@@ -79,6 +79,7 @@
     <Compile Include="TestCases\Pretty\RefLocalsAndReturns.cs" />
     <Compile Include="TestCases\Pretty\TupleTests.cs" />
     <Compile Include="TestCases\Pretty\WellKnownConstants.cs" />
+    <Compile Include="TestCases\Pretty\BooleanDisjunction.cs" />
     <Compile Include="TypeSystem\TypeSystemHelper.cs" />
     <Compile Include="TypeSystem\TypeSystemLoaderTests.cs" />
     <Compile Include="TypeSystem\TypeSystemTestCase.cs" />

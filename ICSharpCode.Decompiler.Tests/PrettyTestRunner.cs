@@ -279,6 +279,12 @@ namespace ICSharpCode.Decompiler.Tests
 		}
 
 		[Test]
+		public void BooleanDisjunction([ValueSource(nameof(roslynOnlyOptions))] CSharpCompilerOptions cscOptions)
+		{
+			RunForLibrary(cscOptions: cscOptions);
+		}
+
+		[Test]
 		public void WellKnownConstants([ValueSource("defaultOptions")] CSharpCompilerOptions cscOptions)
 		{
 			RunForLibrary(cscOptions: cscOptions);
