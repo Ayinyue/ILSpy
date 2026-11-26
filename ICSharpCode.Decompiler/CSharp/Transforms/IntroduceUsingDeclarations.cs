@@ -94,12 +94,6 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 
 			// verify that the SimpleTypes refer to the correct type (no ambiguities)
 			rootNode.AcceptVisitor(new FullyQualifyAmbiguousTypeNamesVisitor(context, usingScope));
-			if (Environment.GetEnvironmentVariable("DNSPY_ILSPY32_DIAG") == "1") {
-				var sbc = new System.Text.StringBuilder("IUD-CHILDREN");
-				foreach (AstNode c in rootNode.Children)
-					sbc.Append(" [").Append(c.GetType().Name).Append("]");
-				Console.Error.WriteLine(sbc.ToString());
-			}
 		}
 		
 		sealed class FindRequiredImports : DepthFirstAstVisitor

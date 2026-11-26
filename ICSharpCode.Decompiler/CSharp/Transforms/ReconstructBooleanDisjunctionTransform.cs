@@ -207,7 +207,9 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 				if (binary.Operator == BinaryOperatorType.ConditionalOr)
 					return MakeLogical(Negate(binary.Left), BinaryOperatorType.ConditionalAnd, Negate(binary.Right));
 				var flipped = FlipComparison(binary.Operator);
-				if (flipped != BinaryOperatorType.Any)
+				// Only flip when the complementing comparison is actually equivalent:
+				// no NaN (float/double), no lifted (three-valued) and no user-defined operator.
+				if (flipped != BinaryOperatorType.Any && CanFlipComparison(binary, flipped))
 					return MakeComparison(binary.Left, flipped, binary.Right);
 			}
 			return new UnaryOperatorExpression(UnaryOperatorType.Not, Detach(expr));
@@ -219,6 +221,28 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 			if (expr != null)
 				expr.Remove();
 			return expr;
+		}
+
+		/// <summary>
+		/// '!(a &lt; b)' equals 'a &gt;= b' only when NaN cannot occur and the comparison is not
+		/// lifted; user-defined operators need not provide the complementing pair.
+		/// </summary>
+		static bool CanFlipComparison(BinaryOperatorExpression bin, BinaryOperatorType flipped)
+		{
+			var rr = bin.GetResolveResult() as OperatorResolveResult;
+			bool relational = flipped == BinaryOperatorType.LessThan || flipped == BinaryOperatorType.LessThanOrEqual
+				|| flipped == BinaryOperatorType.GreaterThan || flipped == BinaryOperatorType.GreaterThanOrEqual;
+			bool hitsNaN = relational && rr != null && rr.Operands != null && rr.Operands.Count == 2
+				&& (IsFloatingPoint(rr.Operands[0].Type) || IsFloatingPoint(rr.Operands[1].Type));
+			bool userDefined = rr != null && rr.UserDefinedOperatorMethod != null;
+			return !rr.IsLiftedOperator && !hitsNaN && !userDefined;
+		}
+
+		static bool IsFloatingPoint(IType type)
+		{
+			type = NullableType.GetUnderlyingType(type);
+			var ktc = type.GetDefinition()?.KnownTypeCode;
+			return ktc == KnownTypeCode.Single || ktc == KnownTypeCode.Double;
 		}
 
 		static BinaryOperatorType FlipComparison(BinaryOperatorType op)
