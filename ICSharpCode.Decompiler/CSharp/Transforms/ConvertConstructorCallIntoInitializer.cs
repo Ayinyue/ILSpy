@@ -201,10 +201,24 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 					AstNode fieldOrPropertyDecl = members.FirstOrDefault(f => f.GetSymbol() == fieldOrProperty);
 					if (fieldOrPropertyDecl == null)
 						break;
-					if (fieldOrPropertyDecl is FieldDeclaration fd)
+					if (fieldOrPropertyDecl is FieldDeclaration fd) {
+						// dnSpy 2.3 overwrites the field's own initializer (the earlier value is dropped).
 						fd.Variables.Single().Initializer = assignment.Right.Detach();
-					else if (fieldOrPropertyDecl is PropertyDeclaration pd)
-						pd.Initializer = assignment.Right.Detach();
+					} else if (fieldOrPropertyDecl is PropertyDeclaration pd) {
+						var newRight = assignment.Right.Detach();
+						// dnSpy 2.3 chains instead of overwriting: 'P = Init2() = Init3()' keeps both
+						// side-effecting evaluations instead of silently dropping the first one.
+						if (pd.Initializer != null) {
+							// Auto-property initializers are represented as an assignment without a left side;
+							// the chained form keeps the old value expression ('Init2() = Init3()').
+							Expression oldValue = pd.Initializer is AssignmentExpression oldAssign && oldAssign.Left.IsNull
+								? oldAssign.Right.Detach()
+								: pd.Initializer.Detach();
+							pd.Initializer = new AssignmentExpression(oldValue, AssignmentOperatorType.Assign, newRight);
+						}
+						else
+							pd.Initializer = newRight;
+					}
 					else
 						break;
 					es.Remove();
